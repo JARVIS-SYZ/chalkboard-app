@@ -23,7 +23,6 @@
       box-shadow: 0 10px 30px rgba(0,0,0,0.2);
     }
     .header h1 { font-size: 24px; color: #333; margin-bottom: 10px; }
-
     .room-info {
       display: flex; align-items: center; justify-content: space-between;
       padding: 15px; background: #e3f2fd; border-radius: 8px;
@@ -35,7 +34,6 @@
       font-family: 'Courier New', monospace;
       letter-spacing: 4px;
     }
-
     .connection-status {
       display: flex; align-items: center; gap: 10px;
       padding: 10px; background: #f5f5f5; border-radius: 8px;
@@ -176,9 +174,8 @@
 
   <script type="module">
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
-    import { getDatabase, ref, set, onValue, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
+    import { getDatabase, ref, set, serverTimestamp, onDisconnect, onValue } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
 
-    // ✅ Firebase 설정
     const firebaseConfig = {
       apiKey: "AIzaSyB8OTEf1deQf0tLMElQAH3iyMFcRnL_2lT",
       authDomain: "syz-test.firebaseapp.com",
@@ -189,25 +186,30 @@
       appId: "1:85684795276:web:eb64abb9dd16ee30e788a9"
     };
 
-    // URL에서 Room ID 가져오기
     const urlParams = new URLSearchParams(window.location.search);
     const ROOM_ID = urlParams.get('room');
 
     if (!ROOM_ID) {
       alert('잘못된 접근입니다. QR 코드를 다시 스캔해주세요.');
-      document.body.innerHTML = '<div style="padding: 40px; text-align: center;"><h1>❌ Room ID가 없습니다</h1><p>iPad에서 QR 코드를 다시 생성해 주세요.</p></div>';
+      document.body.innerHTML = '<div style="padding: 40px; text-align: center;"><h1>❌ Room ID가 없습니다</h1><p>iPad에서 QR 코드를 스캔해주세요.</p></div>';
       throw new Error('No room ID');
     }
+
     document.getElementById('roomCode').textContent = ROOM_ID;
 
-    // 캔버스
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+
+    const presenceRef = ref(db, `rooms/${ROOM_ID}/presence/assistant`);
+    const connectedRef = ref(db, `.info/connected`);
+    const ipadPresenceRef = ref(db, `rooms/${ROOM_ID}/presence/ipad/connected`);
+
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d', { willReadFrequently: false });
 
     let isDrawing = false;
     let currentTool = 'pen';
     let lastPos = null;
-
     let currentStroke = null;
     let allStrokes = [];
 
@@ -224,8 +226,55 @@
       ctx.fillStyle = 'rgba(18, 44, 18, 0.35)';
       ctx.fillRect(0, 0, w, h);
     }
+
     setupCanvas();
     window.addEventListener('resize', setupCanvas);
+
+    function showStatus(type, icon, title, description) {
+      const statusMessage = document.getElementById('statusMessage');
+      const statusIcon = document.getElementById('statusIcon');
+      const statusTitle = document.getElementById('statusTitle');
+      const statusDescription = document.getElementById('statusDescription');
+      statusMessage.className = `status-message show ${type}`;
+      statusIcon.textContent = icon;
+      statusTitle.textContent = title;
+      statusDescription.textContent = description;
+      setTimeout(() => statusMessage.classList.remove('show'), 2500);
+    }
+
+    // iPad 접속 상태도 UI에 보여주기(선택)
+    onValue(ipadPresenceRef, (snap) => {
+      const v = snap.val();
+      // v === true면 iPad가 살아있다는 뜻 (iPad 코드에서 set함)
+      // 여기서는 표시만 해두고 끝.
+    });
+
+    // presence: 연결되면 assistant=true, 끊기면 자동 false
+    onValue(connectedRef, async (snap) => {
+      if (snap.val() === true) {
+        try {
+          await set(presenceRef, { connected: true, ts: Date.now(), serverTs: serverTimestamp() });
+          onDisconnect(presenceRef).set({ connected: false, ts: Date.now(), serverTs: serverTimestamp() });
+
+          document.getElementById('statusText').textContent = `Room ${ROOM_ID} 연결됨`;
+          document.getElementById('statusDot').classList.add('connected');
+          showStatus('success', '✔', '연결 완료!', 'iPad와 연결되었습니다');
+        } catch (e) {
+          console.error('presence set error:', e);
+          document.getElementById('statusText').textContent = '연결 실패';
+          showStatus('error', '✖', '연결 실패', e.message);
+        }
+      } else {
+        document.getElementById('statusText').textContent = '연결 끊김';
+        document.getElementById('statusDot').classList.remove('connected');
+      }
+    });
+
+    window.selectTool = function(tool) {
+      currentTool = tool;
+      document.querySelectorAll('.tool-btn').forEach(btn => btn.classList.remove('active'));
+      document.querySelector(`[data-tool="${tool}"]`).classList.add('active');
+    };
 
     function getPosition(e) {
       const rect = canvas.getBoundingClientRect();
@@ -246,7 +295,7 @@
         const w = currentTool === 'thick' ? 22 : 15;
         ctx.fillStyle = 'rgba(230, 235, 228, 0.6)';
         ctx.beginPath();
-        ctx.arc(x, y, w / 2, 0, Math.PI * 2);
+        ctx.arc(x, y, w/2, 0, Math.PI * 2);
         ctx.fill();
       }
       ctx.restore();
@@ -275,13 +324,11 @@
       isDrawing = true;
       const pos = getPosition(e);
       lastPos = pos;
-
       currentStroke = {
-        tool: currentTool === 'thick' ? 'pen' : currentTool, // thick는 pen으로 처리해도 되고, 그대로 thick로 둬도 됨
+        tool: currentTool,
         width: currentTool === 'thick' ? 22 : (currentTool === 'eraser' ? 20 : 15),
         points: [{ x: pos.x, y: pos.y, t: Date.now() }]
       };
-
       drawPreview(pos.x, pos.y);
     }
 
@@ -296,10 +343,8 @@
     function stopDrawing() {
       if (!isDrawing) return;
       isDrawing = false;
-
       if (currentStroke && currentStroke.points.length > 0) {
         allStrokes.push(currentStroke);
-        console.log('스트로크 추가:', currentStroke.points.length, '개 점');
       }
       currentStroke = null;
       lastPos = null;
@@ -313,64 +358,28 @@
     canvas.addEventListener('touchmove', (e) => { e.preventDefault(); draw(e); }, { passive: false });
     canvas.addEventListener('touchend', (e) => { e.preventDefault(); stopDrawing(); }, { passive: false });
 
-    // ===== Firebase =====
-    const app = initializeApp(firebaseConfig);
-    const db = getDatabase(app);
-
-    // ✅ iPad와 100% 동일 경로로 통일 (여기가 핵심)
-    const latestRef = ref(db, `rooms/${ROOM_ID}/latest`);
-    const presenceAssistantRef = ref(db, `rooms/${ROOM_ID}/presence/assistant`);
-    const infoConnectedRef = ref(db, '.info/connected');
-
-    function setConnectedUI(ok, text) {
-      document.getElementById('statusText').textContent = text;
-      const dot = document.getElementById('statusDot');
-      if (ok) dot.classList.add('connected');
-      else dot.classList.remove('connected');
+    // ✅ iPad가 듣는 곳 = rooms/<id>/latest 로 고정
+    async function writeLatest(payload) {
+      await set(ref(db, `rooms/${ROOM_ID}/latest`), {
+        ...payload,
+        ts: Date.now(),
+        serverTs: serverTimestamp(),
+      });
     }
-
-    // 연결 상태 표시
-    onValue(infoConnectedRef, async (snap) => {
-      const ok = snap.val() === true;
-      setConnectedUI(ok, ok ? `Firebase 연결됨 (Room ${ROOM_ID})` : 'Firebase 연결 끊김');
-      if (ok) {
-        // 조수 접속 표시
-        try {
-          await set(presenceAssistantRef, { connected: true, ts: Date.now(), serverTs: serverTimestamp() });
-          // iPad “대기중” 풀기용 hello 한 번
-          await set(latestRef, { type: 'hello', ts: Date.now(), serverTs: serverTimestamp() });
-          showStatus('success', '✔', '연결 완료!', 'iPad가 수신 대기 중입니다');
-        } catch (e) {
-          console.error(e);
-          showStatus('error', '✖', '연결 실패', String(e?.message || e));
-        }
-      }
-    });
-
-    window.selectTool = function(tool) {
-      currentTool = tool;
-      document.querySelectorAll('.tool-btn').forEach(btn => btn.classList.remove('active'));
-      document.querySelector(`[data-tool="${tool}"]`).classList.add('active');
-    };
 
     window.clearCanvas = async function() {
       const rect = canvas.getBoundingClientRect();
       ctx.clearRect(0, 0, rect.width, rect.height);
       setupCanvas();
-
       allStrokes = [];
       currentStroke = null;
 
       try {
-        await set(latestRef, {
-          type: 'clear',
-          ts: Date.now(),
-          serverTs: serverTimestamp()
-        });
+        await writeLatest({ type: 'clear' });
         showStatus('success', '🧽', '지움 완료', '칠판이 깨끗해졌습니다');
       } catch (error) {
         console.error('Clear 전송 실패:', error);
-        showStatus('error', '✖', '전송 실패', error.message || String(error));
+        showStatus('error', '✖', '전송 실패', error.message);
       }
     };
 
@@ -383,35 +392,18 @@
       showStatus('sending', '📤', '전송중...', 'Firebase에 업로드 중입니다');
 
       try {
-        await set(latestRef, {
+        await writeLatest({
           type: 'strokes',
           data: allStrokes,
-          count: allStrokes.length,
-          ts: Date.now(),
-          serverTs: serverTimestamp()
+          count: allStrokes.length
         });
-
-        console.log('경로 전송 완료:', allStrokes.length, '개 스트로크');
         showStatus('success', '✔', '전송 완료!', `${allStrokes.length}개 스트로크 전송됨`);
-
         allStrokes = [];
       } catch (error) {
         console.error('전송 오류:', error);
-        showStatus('error', '✖', '전송 실패', error.message || String(error));
+        showStatus('error', '✖', '전송 실패', error.message);
       }
     };
-
-    function showStatus(type, icon, title, description) {
-      const statusMessage = document.getElementById('statusMessage');
-      const statusIcon = document.getElementById('statusIcon');
-      const statusTitle = document.getElementById('statusTitle');
-      const statusDescription = document.getElementById('statusDescription');
-      statusMessage.className = `status-message show ${type}`;
-      statusIcon.textContent = icon;
-      statusTitle.textContent = title;
-      statusDescription.textContent = description;
-      setTimeout(() => statusMessage.classList.remove('show'), 3000);
-    }
   </script>
 </body>
 </html>
