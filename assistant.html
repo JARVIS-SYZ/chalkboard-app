@@ -28,11 +28,8 @@
       padding: 15px; background: #e3f2fd; border-radius: 8px;
     }
     .room-code {
-      font-size: 32px;
-      font-weight: bold;
-      color: #1976d2;
-      font-family: 'Courier New', monospace;
-      letter-spacing: 4px;
+      font-size: 32px; font-weight: bold; color: #1976d2;
+      font-family: 'Courier New', monospace; letter-spacing: 4px;
     }
     .connection-status {
       display: flex; align-items: center; gap: 10px;
@@ -43,11 +40,8 @@
       width: 12px; height: 12px; border-radius: 50%;
       background: #ccc; transition: all 0.3s ease;
     }
-    .status-dot.connected {
-      background: #00ff00;
-      box-shadow: 0 0 10px #00ff00;
-      animation: blink 1.5s infinite;
-    }
+    .status-dot.connected { background: #00ff00; box-shadow: 0 0 10px #00ff00; animation: blink 1.5s infinite; }
+    .status-dot.warn { background: #ffb020; box-shadow: 0 0 10px #ffb020; }
     @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
     .status-text { font-size: 14px; color: #666; }
 
@@ -65,30 +59,17 @@
     .canvas-header h2 { font-size: 18px; color: #333; }
     .tool-buttons { display: flex; gap: 10px; }
     .tool-btn {
-      padding: 8px 15px;
-      background: #f5f5f5;
-      border: 2px solid #ddd;
-      border-radius: 8px;
-      font-size: 14px;
-      cursor: pointer;
-      transition: all 0.3s ease;
-      user-select: none;
+      padding: 8px 15px; background: #f5f5f5; border: 2px solid #ddd;
+      border-radius: 8px; font-size: 14px; cursor: pointer;
+      transition: all 0.3s ease; user-select: none;
     }
     .tool-btn:active { transform: scale(0.95); }
-    .tool-btn.active {
-      background: #667eea;
-      color: white;
-      border-color: #667eea;
-    }
+    .tool-btn.active { background: #667eea; color: white; border-color: #667eea; }
 
     #canvas {
-      display: block;
-      width: 100%;
-      height: 400px;
-      border: 2px solid #ddd;
-      border-radius: 8px;
-      touch-action: none;
-      cursor: crosshair;
+      display: block; width: 100%; height: 400px;
+      border: 2px solid #ddd; border-radius: 8px;
+      touch-action: none; cursor: crosshair;
       background: #1a3a1a;
       background-image:
         radial-gradient(ellipse at 20% 30%, rgba(60,100,60,0.3) 0%, transparent 40%),
@@ -98,12 +79,8 @@
 
     .action-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
     .action-btn {
-      padding: 18px;
-      border: none;
-      border-radius: 12px;
-      font-size: 18px;
-      font-weight: bold;
-      cursor: pointer;
+      padding: 18px; border: none; border-radius: 12px;
+      font-size: 18px; font-weight: bold; cursor: pointer;
       transition: all 0.3s ease;
       box-shadow: 0 5px 15px rgba(0,0,0,0.2);
       user-select: none;
@@ -113,14 +90,9 @@
     .send-btn { background: #51cf66; color: white; }
 
     .status-message {
-      background: white;
-      border-radius: 15px;
-      padding: 20px;
-      text-align: center;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-      margin-top: 20px;
-      opacity: 0;
-      transform: translateY(20px);
+      background: white; border-radius: 15px; padding: 20px;
+      text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+      margin-top: 20px; opacity: 0; transform: translateY(20px);
       transition: all 0.3s ease;
     }
     .status-message.show { opacity: 1; transform: translateY(0); }
@@ -145,6 +117,10 @@
       <div class="connection-status">
         <div class="status-dot" id="statusDot"></div>
         <span class="status-text" id="statusText">연결 중...</span>
+      </div>
+      <div class="connection-status" style="margin-top:10px;">
+        <div class="status-dot" id="ipadDot"></div>
+        <span class="status-text" id="ipadText">iPad 대기 중...</span>
       </div>
     </div>
 
@@ -174,8 +150,11 @@
 
   <script type="module">
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
-    import { getDatabase, ref, set, serverTimestamp, onDisconnect, onValue } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
+    import {
+      getDatabase, ref, set, push, onValue, onDisconnect, serverTimestamp
+    } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
 
+    // ✅ Firebase 설정 (공개 가능한 설정값 / 보안은 RTDB Rules로)
     const firebaseConfig = {
       apiKey: "AIzaSyB8OTEf1deQf0tLMElQAH3iyMFcRnL_2lT",
       authDomain: "syz-test.firebaseapp.com",
@@ -188,21 +167,41 @@
 
     const urlParams = new URLSearchParams(window.location.search);
     const ROOM_ID = urlParams.get('room');
-
     if (!ROOM_ID) {
       alert('잘못된 접근입니다. QR 코드를 다시 스캔해주세요.');
       document.body.innerHTML = '<div style="padding: 40px; text-align: center;"><h1>❌ Room ID가 없습니다</h1><p>iPad에서 QR 코드를 스캔해주세요.</p></div>';
       throw new Error('No room ID');
     }
-
     document.getElementById('roomCode').textContent = ROOM_ID;
 
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
 
-    const presenceRef = ref(db, `rooms/${ROOM_ID}/presence/assistant`);
-    const connectedRef = ref(db, `.info/connected`);
-    const ipadPresenceRef = ref(db, `rooms/${ROOM_ID}/presence/ipad/connected`);
+    const statusDot = document.getElementById('statusDot');
+    const statusText = document.getElementById('statusText');
+    const ipadDot = document.getElementById('ipadDot');
+    const ipadText = document.getElementById('ipadText');
+
+    // presence
+    const assistantPresenceRef = ref(db, `rooms/${ROOM_ID}/presence/assistant`);
+    const ipadPresenceRef = ref(db, `rooms/${ROOM_ID}/presence/ipad`);
+
+    // iPad presence UI
+    onValue(ipadPresenceRef, (snap) => {
+      const v = snap.val();
+      const connected = !!v?.connected;
+      ipadDot.classList.toggle('connected', connected);
+      ipadDot.classList.toggle('warn', !connected);
+      ipadText.textContent = connected ? 'iPad 연결됨' : 'iPad 대기 중...';
+    });
+
+    // assistant presence set + onDisconnect
+    await set(assistantPresenceRef, { connected: true, ts: Date.now(), serverTs: serverTimestamp() });
+    onDisconnect(assistantPresenceRef).set({ connected: false, ts: Date.now(), serverTs: serverTimestamp() });
+
+    statusText.textContent = `Room ${ROOM_ID} 연결됨`;
+    statusDot.classList.add('connected');
+    showStatus('success', '✔', '연결 완료!', 'iPad로 전송할 준비가 되었습니다');
 
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d', { willReadFrequently: false });
@@ -226,49 +225,8 @@
       ctx.fillStyle = 'rgba(18, 44, 18, 0.35)';
       ctx.fillRect(0, 0, w, h);
     }
-
     setupCanvas();
     window.addEventListener('resize', setupCanvas);
-
-    function showStatus(type, icon, title, description) {
-      const statusMessage = document.getElementById('statusMessage');
-      const statusIcon = document.getElementById('statusIcon');
-      const statusTitle = document.getElementById('statusTitle');
-      const statusDescription = document.getElementById('statusDescription');
-      statusMessage.className = `status-message show ${type}`;
-      statusIcon.textContent = icon;
-      statusTitle.textContent = title;
-      statusDescription.textContent = description;
-      setTimeout(() => statusMessage.classList.remove('show'), 2500);
-    }
-
-    // iPad 접속 상태도 UI에 보여주기(선택)
-    onValue(ipadPresenceRef, (snap) => {
-      const v = snap.val();
-      // v === true면 iPad가 살아있다는 뜻 (iPad 코드에서 set함)
-      // 여기서는 표시만 해두고 끝.
-    });
-
-    // presence: 연결되면 assistant=true, 끊기면 자동 false
-    onValue(connectedRef, async (snap) => {
-      if (snap.val() === true) {
-        try {
-          await set(presenceRef, { connected: true, ts: Date.now(), serverTs: serverTimestamp() });
-          onDisconnect(presenceRef).set({ connected: false, ts: Date.now(), serverTs: serverTimestamp() });
-
-          document.getElementById('statusText').textContent = `Room ${ROOM_ID} 연결됨`;
-          document.getElementById('statusDot').classList.add('connected');
-          showStatus('success', '✔', '연결 완료!', 'iPad와 연결되었습니다');
-        } catch (e) {
-          console.error('presence set error:', e);
-          document.getElementById('statusText').textContent = '연결 실패';
-          showStatus('error', '✖', '연결 실패', e.message);
-        }
-      } else {
-        document.getElementById('statusText').textContent = '연결 끊김';
-        document.getElementById('statusDot').classList.remove('connected');
-      }
-    });
 
     window.selectTool = function(tool) {
       currentTool = tool;
@@ -281,6 +239,39 @@
       const clientX = e.touches ? e.touches[0].clientX : e.clientX;
       const clientY = e.touches ? e.touches[0].clientY : e.clientY;
       return { x: clientX - rect.left, y: clientY - rect.top };
+    }
+
+    function startDrawing(e) {
+      isDrawing = true;
+      const pos = getPosition(e);
+      lastPos = pos;
+
+      currentStroke = {
+        tool: currentTool,
+        width: currentTool === 'thick' ? 22 : (currentTool === 'eraser' ? 20 : 15),
+        points: [{ x: pos.x, y: pos.y, t: Date.now() }]
+      };
+
+      drawPreview(pos.x, pos.y);
+    }
+
+    function draw(e) {
+      if (!isDrawing) return;
+      const pos = getPosition(e);
+      currentStroke.points.push({ x: pos.x, y: pos.y, t: Date.now() });
+      drawLine(lastPos.x, lastPos.y, pos.x, pos.y);
+      lastPos = pos;
+    }
+
+    function stopDrawing() {
+      if (!isDrawing) return;
+      isDrawing = false;
+
+      if (currentStroke && currentStroke.points.length > 0) {
+        allStrokes.push(currentStroke);
+      }
+      currentStroke = null;
+      lastPos = null;
     }
 
     function drawPreview(x, y) {
@@ -320,36 +311,6 @@
       ctx.restore();
     }
 
-    function startDrawing(e) {
-      isDrawing = true;
-      const pos = getPosition(e);
-      lastPos = pos;
-      currentStroke = {
-        tool: currentTool,
-        width: currentTool === 'thick' ? 22 : (currentTool === 'eraser' ? 20 : 15),
-        points: [{ x: pos.x, y: pos.y, t: Date.now() }]
-      };
-      drawPreview(pos.x, pos.y);
-    }
-
-    function draw(e) {
-      if (!isDrawing) return;
-      const pos = getPosition(e);
-      currentStroke.points.push({ x: pos.x, y: pos.y, t: Date.now() });
-      drawLine(lastPos.x, lastPos.y, pos.x, pos.y);
-      lastPos = pos;
-    }
-
-    function stopDrawing() {
-      if (!isDrawing) return;
-      isDrawing = false;
-      if (currentStroke && currentStroke.points.length > 0) {
-        allStrokes.push(currentStroke);
-      }
-      currentStroke = null;
-      lastPos = null;
-    }
-
     canvas.addEventListener('mousedown', startDrawing);
     canvas.addEventListener('mousemove', draw);
     canvas.addEventListener('mouseup', stopDrawing);
@@ -358,13 +319,19 @@
     canvas.addEventListener('touchmove', (e) => { e.preventDefault(); draw(e); }, { passive: false });
     canvas.addEventListener('touchend', (e) => { e.preventDefault(); stopDrawing(); }, { passive: false });
 
-    // ✅ iPad가 듣는 곳 = rooms/<id>/latest 로 고정
-    async function writeLatest(payload) {
-      await set(ref(db, `rooms/${ROOM_ID}/latest`), {
+    async function writePayload(payload) {
+      // ✅ 핵심: iPad는 rooms/<room>/latest를 먼저 듣습니다.
+      const latestRef = ref(db, `rooms/${ROOM_ID}/latest`);
+      const eventsRef = ref(db, `rooms/${ROOM_ID}/events`);
+
+      const body = {
         ...payload,
         ts: Date.now(),
         serverTs: serverTimestamp(),
-      });
+      };
+
+      await set(latestRef, body);
+      await push(eventsRef, body);
     }
 
     window.clearCanvas = async function() {
@@ -375,11 +342,10 @@
       currentStroke = null;
 
       try {
-        await writeLatest({ type: 'clear' });
+        await writePayload({ type: 'clear' });
         showStatus('success', '🧽', '지움 완료', '칠판이 깨끗해졌습니다');
       } catch (error) {
-        console.error('Clear 전송 실패:', error);
-        showStatus('error', '✖', '전송 실패', error.message);
+        showStatus('error', '✖', '전송 실패', error?.message || String(error));
       }
     };
 
@@ -388,22 +354,33 @@
         showStatus('error', '✖', '전송할 내용 없음', '먼저 그림을 그려주세요');
         return;
       }
-
       showStatus('sending', '📤', '전송중...', 'Firebase에 업로드 중입니다');
 
       try {
-        await writeLatest({
+        await writePayload({
           type: 'strokes',
           data: allStrokes,
           count: allStrokes.length
         });
+
         showStatus('success', '✔', '전송 완료!', `${allStrokes.length}개 스트로크 전송됨`);
         allStrokes = [];
       } catch (error) {
-        console.error('전송 오류:', error);
-        showStatus('error', '✖', '전송 실패', error.message);
+        showStatus('error', '✖', '전송 실패', error?.message || String(error));
       }
     };
+
+    function showStatus(type, icon, title, description) {
+      const statusMessage = document.getElementById('statusMessage');
+      const statusIcon = document.getElementById('statusIcon');
+      const statusTitle = document.getElementById('statusTitle');
+      const statusDescription = document.getElementById('statusDescription');
+      statusMessage.className = `status-message show ${type}`;
+      statusIcon.textContent = icon;
+      statusTitle.textContent = title;
+      statusDescription.textContent = description;
+      setTimeout(() => statusMessage.classList.remove('show'), 2500);
+    }
   </script>
 </body>
 </html>
