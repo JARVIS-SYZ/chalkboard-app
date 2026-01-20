@@ -1,386 +1,261 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <title>조수용 칠판 앱</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Chalkboard Assistant</title>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      min-height: 100vh;
-      padding: 20px;
-      touch-action: none;
-    }
-    .container { max-width: 600px; margin: 0 auto; }
-    .header {
-      background: white;
-      border-radius: 15px;
-      padding: 20px;
-      margin-bottom: 20px;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-    }
-    .header h1 { font-size: 24px; color: #333; margin-bottom: 10px; }
-    .room-info {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 15px; background: #e3f2fd; border-radius: 8px;
-    }
-    .room-code {
-      font-size: 32px; font-weight: bold; color: #1976d2;
-      font-family: 'Courier New', monospace; letter-spacing: 4px;
-    }
-    .connection-status {
-      display: flex; align-items: center; gap: 10px;
-      padding: 10px; background: #f5f5f5; border-radius: 8px;
-      margin-top: 10px;
-    }
-    .status-dot {
-      width: 12px; height: 12px; border-radius: 50%;
-      background: #ccc; transition: all 0.3s ease;
-    }
-    .status-dot.connected { background: #00ff00; box-shadow: 0 0 10px #00ff00; animation: blink 1.5s infinite; }
-    .status-dot.warn { background: #ffb020; box-shadow: 0 0 10px #ffb020; }
-    @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-    .status-text { font-size: 14px; color: #666; }
-
-    .canvas-container {
-      background: white;
-      border-radius: 15px;
-      padding: 15px;
-      margin-bottom: 20px;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-    }
-    .canvas-header {
-      display: flex; justify-content: space-between; align-items: center;
-      margin-bottom: 15px;
-    }
-    .canvas-header h2 { font-size: 18px; color: #333; }
-    .tool-buttons { display: flex; gap: 10px; }
-    .tool-btn {
-      padding: 8px 15px; background: #f5f5f5; border: 2px solid #ddd;
-      border-radius: 8px; font-size: 14px; cursor: pointer;
-      transition: all 0.3s ease; user-select: none;
-    }
-    .tool-btn:active { transform: scale(0.95); }
-    .tool-btn.active { background: #667eea; color: white; border-color: #667eea; }
-
-    #canvas {
-      display: block; width: 100%; height: 400px;
-      border: 2px solid #ddd; border-radius: 8px;
-      touch-action: none; cursor: crosshair;
-      background: #1a3a1a;
-      background-image:
-        radial-gradient(ellipse at 20% 30%, rgba(60,100,60,0.3) 0%, transparent 40%),
-        radial-gradient(ellipse at 80% 70%, rgba(20,40,20,0.4) 0%, transparent 40%);
-      box-shadow: inset 0 0 80px rgba(0,0,0,0.4);
-    }
-
-    .action-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
-    .action-btn {
-      padding: 18px; border: none; border-radius: 12px;
-      font-size: 18px; font-weight: bold; cursor: pointer;
-      transition: all 0.3s ease;
-      box-shadow: 0 5px 15px rgba(0,0,0,0.2);
-      user-select: none;
-    }
-    .action-btn:active { transform: translateY(2px); box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
-    .clear-btn { background: #ff6b6b; color: white; }
-    .send-btn { background: #51cf66; color: white; }
-
-    .status-message {
-      background: white; border-radius: 15px; padding: 20px;
-      text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-      margin-top: 20px; opacity: 0; transform: translateY(20px);
-      transition: all 0.3s ease;
-    }
-    .status-message.show { opacity: 1; transform: translateY(0); }
-    .status-message.success { background: linear-gradient(135deg, #51cf66, #37b24d); color: white; }
-    .status-message.error { background: linear-gradient(135deg, #ff6b6b, #fa5252); color: white; }
-    .status-message.sending { background: linear-gradient(135deg, #4c6ef5, #3b5bdb); color: white; }
-    .status-icon { font-size: 48px; margin-bottom: 10px; }
-    .status-title { font-size: 24px; font-weight: bold; margin-bottom: 10px; }
-    .status-description { font-size: 14px; opacity: 0.9; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 16px; background:#0b0b0b; color:#fff; }
+    .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+    input, button { font-size: 16px; padding: 10px 12px; border-radius:10px; border: 1px solid #333; }
+    input { background:#111; color:#fff; }
+    button { background:#1f6feb; color:#fff; border:none; font-weight:700; }
+    button.secondary { background:#222; }
+    #log { white-space: pre-wrap; background: #111; color: #ddd; padding: 12px; border-radius: 12px; margin-top: 12px; border:1px solid #222; }
+    #pad { width: 100%; height: 320px; border: 1px solid #333; border-radius: 14px; touch-action: none; background:#0f0f0f; }
+    .pill { display:inline-block; padding: 4px 10px; border-radius: 999px; background:#222; border:1px solid #333; font-size:12px; }
+    .ok { background:#123b1f; border-color:#1f7a3a; }
+    .bad { background:#3b1212; border-color:#7a1f1f; }
+    .muted { color:#bdbdbd; font-size:12px; }
   </style>
 </head>
 <body>
-  <div class="container">
-    <div class="header">
-      <h1>🎩 조수용 칠판</h1>
-      <div class="room-info">
-        <div>
-          <div style="font-size: 12px; color: #666; margin-bottom: 5px;">Room</div>
-          <div class="room-code" id="roomCode">----</div>
-        </div>
-      </div>
-      <div class="connection-status">
-        <div class="status-dot" id="statusDot"></div>
-        <span class="status-text" id="statusText">연결 중...</span>
-      </div>
-      <div class="connection-status" style="margin-top:10px;">
-        <div class="status-dot" id="ipadDot"></div>
-        <span class="status-text" id="ipadText">iPad 대기 중...</span>
-      </div>
-    </div>
+  <h2 style="margin:0 0 8px 0;">Chalkboard Assistant</h2>
 
-    <div class="canvas-container">
-      <div class="canvas-header">
-        <h2>✏️ 손글씨로 적기</h2>
-        <div class="tool-buttons">
-          <button class="tool-btn active" data-tool="pen" onclick="selectTool('pen')">펜</button>
-          <button class="tool-btn" data-tool="thick" onclick="selectTool('thick')">굵게</button>
-          <button class="tool-btn" data-tool="eraser" onclick="selectTool('eraser')">지우개</button>
-        </div>
-      </div>
-      <canvas id="canvas"></canvas>
-    </div>
-
-    <div class="action-buttons">
-      <button class="action-btn clear-btn" onclick="clearCanvas()">🗑️ 지우기</button>
-      <button class="action-btn send-btn" onclick="sendPaths()">📤 전송하기</button>
-    </div>
-
-    <div class="status-message" id="statusMessage">
-      <div class="status-icon" id="statusIcon"></div>
-      <div class="status-title" id="statusTitle"></div>
-      <div class="status-description" id="statusDescription"></div>
-    </div>
+  <div class="row" style="margin-bottom:10px;">
+    <span class="muted">Room</span>
+    <input id="room" placeholder="6자리 Room ID" maxlength="6" />
+    <button id="btnConnect">연결</button>
+    <span id="conn" class="pill bad">DB 끊김</span>
+    <span id="presence" class="pill bad">presence: off</span>
   </div>
 
-  <script type="module">
-    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
-    import {
-      getDatabase, ref, set, push, onValue, onDisconnect, serverTimestamp
-    } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
+  <p class="muted" style="margin-top:0;">
+    아래 패드에 선을 그리고 <b>전송</b>을 누르면 <code>latest</code> + <code>events</code> 둘 다 기록됩니다.
+  </p>
 
-    // ✅ Firebase 설정 (공개 가능한 설정값 / 보안은 RTDB Rules로)
+  <canvas id="pad"></canvas>
+
+  <div class="row" style="margin-top:10px;">
+    <button id="btnSend">전송</button>
+    <button id="btnClear" class="secondary">지우기(클리어 이벤트)</button>
+    <button id="btnReset" class="secondary">로컬 리셋</button>
+  </div>
+
+  <div id="log"></div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
+    import {
+      getDatabase, ref, set, push, onValue, serverTimestamp, onDisconnect
+    } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
+
+    // ====== Firebase Web Config ======
+    // 이 웹 앱 config는 "같은 프로젝트"여야 합니다.
+    // databaseURL은 루트만: https://<dbName>.<region>.firebasedatabase.app
     const firebaseConfig = {
-      apiKey: "AIzaSyB8OTEf1deQf0tLMElQAH3iyMFcRnL_2lT",
+      apiKey: "AIzaSyB8OTEF1deQf0tLMElQAH3iyMFcRnL_2lI",
       authDomain: "syz-test.firebaseapp.com",
       databaseURL: "https://syz-test-default-rtdb.asia-southeast1.firebasedatabase.app",
       projectId: "syz-test",
-      storageBucket: "syz-test.firebasestorage.app",
-      messagingSenderId: "85684795276",
-      appId: "1:85684795276:web:eb64abb9dd16ee30e788a9"
+      appId: "1:85684795276:web:eb64abb9dd16ee30e788a9",
     };
-
-    const urlParams = new URLSearchParams(window.location.search);
-    const ROOM_ID = urlParams.get('room');
-    if (!ROOM_ID) {
-      alert('잘못된 접근입니다. QR 코드를 다시 스캔해주세요.');
-      document.body.innerHTML = '<div style="padding: 40px; text-align: center;"><h1>❌ Room ID가 없습니다</h1><p>iPad에서 QR 코드를 스캔해주세요.</p></div>';
-      throw new Error('No room ID');
-    }
-    document.getElementById('roomCode').textContent = ROOM_ID;
 
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
 
-    const statusDot = document.getElementById('statusDot');
-    const statusText = document.getElementById('statusText');
-    const ipadDot = document.getElementById('ipadDot');
-    const ipadText = document.getElementById('ipadText');
+    const $ = (id) => document.getElementById(id);
+    const roomInput = $("room");
+    const connPill = $("conn");
+    const presencePill = $("presence");
+    const logEl = $("log");
 
-    // presence
-    const assistantPresenceRef = ref(db, `rooms/${ROOM_ID}/presence/assistant`);
-    const ipadPresenceRef = ref(db, `rooms/${ROOM_ID}/presence/ipad`);
+    const qs = new URLSearchParams(location.search);
+    if (qs.get("room")) roomInput.value = String(qs.get("room")).trim().toUpperCase();
 
-    // iPad presence UI
-    onValue(ipadPresenceRef, (snap) => {
-      const v = snap.val();
-      const connected = !!v?.connected;
-      ipadDot.classList.toggle('connected', connected);
-      ipadDot.classList.toggle('warn', !connected);
-      ipadText.textContent = connected ? 'iPad 연결됨' : 'iPad 대기 중...';
+    const clientId = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + "-" + Math.random().toString(16).slice(2));
+    let roomId = "";
+    let isDbConnected = false;
+    let seq = 0;
+
+    function log(...args) {
+      const msg = args.map(a => (typeof a === "string" ? a : JSON.stringify(a, null, 2))).join(" ");
+      logEl.textContent = msg + "\n\n" + logEl.textContent;
+    }
+
+    // ====== .info/connected ======
+    onValue(ref(db, ".info/connected"), (snap) => {
+      isDbConnected = !!snap.val();
+      connPill.textContent = isDbConnected ? "DB 연결됨" : "DB 끊김";
+      connPill.className = "pill " + (isDbConnected ? "ok" : "bad");
     });
 
-    // assistant presence set + onDisconnect
-    await set(assistantPresenceRef, { connected: true, ts: Date.now(), serverTs: serverTimestamp() });
-    onDisconnect(assistantPresenceRef).set({ connected: false, ts: Date.now(), serverTs: serverTimestamp() });
-
-    statusText.textContent = `Room ${ROOM_ID} 연결됨`;
-    statusDot.classList.add('connected');
-    showStatus('success', '✔', '연결 완료!', 'iPad로 전송할 준비가 되었습니다');
-
-    const canvas = document.getElementById('canvas');
-    const ctx = canvas.getContext('2d', { willReadFrequently: false });
-
-    let isDrawing = false;
-    let currentTool = 'pen';
-    let lastPos = null;
-    let currentStroke = null;
-    let allStrokes = [];
-
-    function setupCanvas() {
-      const rect = canvas.getBoundingClientRect();
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      canvas.width = Math.floor(rect.width * dpr);
-      canvas.height = Math.floor(rect.height * dpr);
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.scale(dpr, dpr);
-
-      const w = rect.width;
-      const h = rect.height;
-      ctx.fillStyle = 'rgba(18, 44, 18, 0.35)';
-      ctx.fillRect(0, 0, w, h);
-    }
-    setupCanvas();
-    window.addEventListener('resize', setupCanvas);
-
-    window.selectTool = function(tool) {
-      currentTool = tool;
-      document.querySelectorAll('.tool-btn').forEach(btn => btn.classList.remove('active'));
-      document.querySelector(`[data-tool="${tool}"]`).classList.add('active');
-    };
-
-    function getPosition(e) {
-      const rect = canvas.getBoundingClientRect();
-      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-      return { x: clientX - rect.left, y: clientY - rect.top };
-    }
-
-    function startDrawing(e) {
-      isDrawing = true;
-      const pos = getPosition(e);
-      lastPos = pos;
-
-      currentStroke = {
-        tool: currentTool,
-        width: currentTool === 'thick' ? 22 : (currentTool === 'eraser' ? 20 : 15),
-        points: [{ x: pos.x, y: pos.y, t: Date.now() }]
-      };
-
-      drawPreview(pos.x, pos.y);
-    }
-
-    function draw(e) {
-      if (!isDrawing) return;
-      const pos = getPosition(e);
-      currentStroke.points.push({ x: pos.x, y: pos.y, t: Date.now() });
-      drawLine(lastPos.x, lastPos.y, pos.x, pos.y);
-      lastPos = pos;
-    }
-
-    function stopDrawing() {
-      if (!isDrawing) return;
-      isDrawing = false;
-
-      if (currentStroke && currentStroke.points.length > 0) {
-        allStrokes.push(currentStroke);
-      }
-      currentStroke = null;
-      lastPos = null;
-    }
-
-    function drawPreview(x, y) {
-      ctx.save();
-      if (currentTool === 'eraser') {
-        ctx.globalCompositeOperation = 'destination-out';
-        ctx.fillStyle = 'rgba(0,0,0,1)';
-        ctx.beginPath();
-        ctx.arc(x, y, 20, 0, Math.PI * 2);
-        ctx.fill();
-      } else {
-        const w = currentTool === 'thick' ? 22 : 15;
-        ctx.fillStyle = 'rgba(230, 235, 228, 0.6)';
-        ctx.beginPath();
-        ctx.arc(x, y, w/2, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      ctx.restore();
-    }
-
-    function drawLine(x1, y1, x2, y2) {
-      ctx.save();
-      if (currentTool === 'eraser') {
-        ctx.globalCompositeOperation = 'destination-out';
-        ctx.strokeStyle = 'rgba(0,0,0,1)';
-        ctx.lineWidth = 40;
-      } else {
-        ctx.strokeStyle = 'rgba(230, 235, 228, 0.6)';
-        ctx.lineWidth = currentTool === 'thick' ? 22 : 15;
-      }
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      ctx.beginPath();
-      ctx.moveTo(x1, y1);
-      ctx.lineTo(x2, y2);
-      ctx.stroke();
-      ctx.restore();
-    }
-
-    canvas.addEventListener('mousedown', startDrawing);
-    canvas.addEventListener('mousemove', draw);
-    canvas.addEventListener('mouseup', stopDrawing);
-    canvas.addEventListener('mouseout', stopDrawing);
-    canvas.addEventListener('touchstart', (e) => { e.preventDefault(); startDrawing(e); }, { passive: false });
-    canvas.addEventListener('touchmove', (e) => { e.preventDefault(); draw(e); }, { passive: false });
-    canvas.addEventListener('touchend', (e) => { e.preventDefault(); stopDrawing(); }, { passive: false });
-
-    async function writePayload(payload) {
-      // ✅ 핵심: iPad는 rooms/<room>/latest를 먼저 듣습니다.
-      const latestRef = ref(db, `rooms/${ROOM_ID}/latest`);
-      const eventsRef = ref(db, `rooms/${ROOM_ID}/events`);
-
-      const body = {
-        ...payload,
-        ts: Date.now(),
-        serverTs: serverTimestamp(),
-      };
-
-      await set(latestRef, body);
-      await push(eventsRef, body);
-    }
-
-    window.clearCanvas = async function() {
-      const rect = canvas.getBoundingClientRect();
-      ctx.clearRect(0, 0, rect.width, rect.height);
-      setupCanvas();
-      allStrokes = [];
-      currentStroke = null;
-
-      try {
-        await writePayload({ type: 'clear' });
-        showStatus('success', '🧽', '지움 완료', '칠판이 깨끗해졌습니다');
-      } catch (error) {
-        showStatus('error', '✖', '전송 실패', error?.message || String(error));
-      }
-    };
-
-    window.sendPaths = async function() {
-      if (allStrokes.length === 0) {
-        showStatus('error', '✖', '전송할 내용 없음', '먼저 그림을 그려주세요');
+    async function connect() {
+      roomId = String(roomInput.value || "").trim().toUpperCase();
+      if (!roomId) {
+        alert("roomId를 입력하세요");
         return;
       }
-      showStatus('sending', '📤', '전송중...', 'Firebase에 업로드 중입니다');
+      log("🔌 connect:", { roomId, clientId });
 
+      // presence: rooms/<room>/presence/assistant/<clientId>
+      const pRef = ref(db, `rooms/${roomId}/presence/assistant/${clientId}`);
+
+      // onDisconnect 등록
       try {
-        await writePayload({
-          type: 'strokes',
-          data: allStrokes,
-          count: allStrokes.length
-        });
-
-        showStatus('success', '✔', '전송 완료!', `${allStrokes.length}개 스트로크 전송됨`);
-        allStrokes = [];
-      } catch (error) {
-        showStatus('error', '✖', '전송 실패', error?.message || String(error));
+        await onDisconnect(pRef).set({ online: false, ts: serverTimestamp(), clientId });
+      } catch (e) {
+        log("⚠️ onDisconnect 등록 실패:", String(e));
       }
-    };
 
-    function showStatus(type, icon, title, description) {
-      const statusMessage = document.getElementById('statusMessage');
-      const statusIcon = document.getElementById('statusIcon');
-      const statusTitle = document.getElementById('statusTitle');
-      const statusDescription = document.getElementById('statusDescription');
-      statusMessage.className = `status-message show ${type}`;
-      statusIcon.textContent = icon;
-      statusTitle.textContent = title;
-      statusDescription.textContent = description;
-      setTimeout(() => statusMessage.classList.remove('show'), 2500);
+      // 지금 온라인 표시
+      try {
+        await set(pRef, { online: true, ts: serverTimestamp(), clientId, ua: navigator.userAgent });
+        presencePill.textContent = "presence: on";
+        presencePill.className = "pill ok";
+      } catch (e) {
+        presencePill.textContent = "presence: err";
+        presencePill.className = "pill bad";
+        log("❌ presence set 실패:", String(e));
+      }
+
+      // 디버그: latest가 보이는지 한번 읽어보기(선택)
+      const latestRef = ref(db, `rooms/${roomId}/latest`);
+      onValue(latestRef, (s) => {
+        const v = s.val();
+        if (v) log("👀 latest now:", v);
+      }, { onlyOnce: true });
+
+      log("✅ connected ready");
     }
+
+    // ====== Drawing pad ======
+    const canvas = $("pad");
+    const ctx = canvas.getContext("2d");
+
+    function resizeCanvas() {
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = Math.floor(rect.width * dpr);
+      canvas.height = Math.floor(rect.height * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.lineWidth = 3;
+      ctx.lineJoin = "round";
+      ctx.lineCap = "round";
+      ctx.strokeStyle = "#ffffff";
+      clearLocal();
+    }
+
+    function clearLocal() {
+      const rect = canvas.getBoundingClientRect();
+      ctx.clearRect(0, 0, rect.width, rect.height);
+      ctx.fillStyle = "#0f0f0f";
+      ctx.fillRect(0, 0, rect.width, rect.height);
+    }
+
+    window.addEventListener("resize", resizeCanvas);
+    resizeCanvas();
+
+    let drawing = false;
+    let currentStroke = [];
+    let strokes = [];
+
+    function pointFromEvent(e) {
+      const rect = canvas.getBoundingClientRect();
+      const x = (e.clientX ?? e.touches?.[0]?.clientX) - rect.left;
+      const y = (e.clientY ?? e.touches?.[0]?.clientY) - rect.top;
+      return { x, y, t: Date.now() };
+    }
+
+    function beginStroke(p) {
+      drawing = true;
+      currentStroke = [p];
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+    }
+
+    function moveStroke(p) {
+      if (!drawing) return;
+      currentStroke.push(p);
+      ctx.lineTo(p.x, p.y);
+      ctx.stroke();
+    }
+
+    function endStroke(p) {
+      if (!drawing) return;
+      drawing = false;
+      if (p) currentStroke.push(p);
+      if (currentStroke.length >= 2) strokes.push(currentStroke);
+      currentStroke = [];
+    }
+
+    canvas.addEventListener("pointerdown", (e) => {
+      canvas.setPointerCapture(e.pointerId);
+      beginStroke(pointFromEvent(e));
+    });
+    canvas.addEventListener("pointermove", (e) => moveStroke(pointFromEvent(e)));
+    canvas.addEventListener("pointerup", (e) => endStroke(pointFromEvent(e)));
+    canvas.addEventListener("pointercancel", () => endStroke());
+
+    // ====== Send Payload ======
+    async function writeBoth(payload) {
+      if (!roomId) await connect();
+
+      const latestPath = `rooms/${roomId}/latest`;
+      const eventsPath = `rooms/${roomId}/events`;
+
+      // 1) latest overwrite
+      await set(ref(db, latestPath), payload);
+      // 2) events append
+      await push(ref(db, eventsPath), payload);
+
+      log("✅ writeBoth:", { latestPath, eventsPath, type: payload.type, seq: payload.seq });
+    }
+
+    $("btnConnect").addEventListener("click", connect);
+
+    $("btnSend").addEventListener("click", async () => {
+      if (!isDbConnected) log("⚠️ DB 연결이 불안정할 수 있음(.info/connected=false)");
+      const payload = {
+        type: "strokes",
+        data: strokes,
+        from: "assistant",
+        clientId,
+        seq: ++seq,
+        ts: serverTimestamp(),
+      };
+      try {
+        await writeBoth(payload);
+      } catch (e) {
+        log("❌ send 실패:", String(e));
+      }
+    });
+
+    $("btnClear").addEventListener("click", async () => {
+      const payload = {
+        type: "clear",
+        from: "assistant",
+        clientId,
+        seq: ++seq,
+        ts: serverTimestamp(),
+      };
+      try {
+        await writeBoth(payload);
+        strokes = [];
+        clearLocal();
+      } catch (e) {
+        log("❌ clear 실패:", String(e));
+      }
+    });
+
+    $("btnReset").addEventListener("click", () => {
+      strokes = [];
+      clearLocal();
+      log("↩️ local reset");
+    });
+
+    // 자동 연결(쿼리에 room 있으면)
+    if (roomInput.value) connect();
   </script>
 </body>
 </html>
