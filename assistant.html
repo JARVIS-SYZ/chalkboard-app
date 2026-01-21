@@ -11,7 +11,7 @@
     input { background:#111; color:#fff; }
     button { background:#1f6feb; color:#fff; border:none; font-weight:700; }
     button.secondary { background:#222; }
-    #log { white-space: pre-wrap; background: #111; color: #ddd; padding: 12px; border-radius: 12px; margin-top: 12px; border:1px solid #222; }
+    #log { white-space: pre-wrap; background: #111; color: #ddd; padding: 12px; border-radius: 12px; margin-top: 12px; border:1px solid #222; max-height: 400px; overflow-y: auto; }
     #pad { width: 100%; height: 320px; border: 1px solid #333; border-radius: 14px; touch-action: none; background:#0f0f0f; }
     .pill { display:inline-block; padding: 4px 10px; border-radius: 999px; background:#222; border:1px solid #333; font-size:12px; }
     .ok { background:#123b1f; border-color:#1f7a3a; }
@@ -31,7 +31,7 @@
   </div>
 
   <p class="muted" style="margin-top:0;">
-    아래 패드에 선을 그리고 <b>전송</b>을 누르면 <code>latest</code> + <code>events</code> 둘 다 기록됩니다.
+    아래 패드에 선을 그리고 <b>전송</b>을 누르면 iPad에 그림이 나타납니다.
   </p>
 
   <canvas id="pad"></canvas>
@@ -51,8 +51,6 @@
     } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 
     // ====== Firebase Web Config ======
-    // 이 웹 앱 config는 "같은 프로젝트"여야 합니다.
-    // databaseURL은 루트만: https://<dbName>.<region>.firebasedatabase.app
     const firebaseConfig = {
       apiKey: "AIzaSyB8OTEF1deQf0tLMElQAH3iyMFcRnL_2lI",
       authDomain: "syz-test.firebaseapp.com",
@@ -209,23 +207,40 @@
       // 2) events append
       await push(ref(db, eventsPath), payload);
 
-      log("✅ writeBoth:", { latestPath, eventsPath, type: payload.type, seq: payload.seq });
+      log("✅ writeBoth:", { latestPath, eventsPath, type: payload.type, seq: payload.seq, strokeCount: payload.data?.length });
     }
 
     $("btnConnect").addEventListener("click", connect);
 
     $("btnSend").addEventListener("click", async () => {
       if (!isDbConnected) log("⚠️ DB 연결이 불안정할 수 있음(.info/connected=false)");
+      
+      if (strokes.length === 0) {
+        log("⚠️ 전송할 그림이 없습니다. 먼저 그림을 그려주세요.");
+        return;
+      }
+
+      // iPad가 이해할 수 있는 형식으로 변환
+      const formattedStrokes = strokes.map(pointArray => ({
+        points: pointArray.map(p => ({ x: p.x, y: p.y })), // t 제거, x,y만
+        width: 15, // 기본 분필 굵기
+        tool: "chalk" // 분필 도구
+      }));
+
       const payload = {
         type: "strokes",
-        data: strokes,
+        data: formattedStrokes,
         from: "assistant",
         clientId,
         seq: ++seq,
         ts: serverTimestamp(),
       };
+
+      log("📤 전송 데이터:", { strokeCount: formattedStrokes.length, totalPoints: formattedStrokes.reduce((sum, s) => sum + s.points.length, 0) });
+
       try {
         await writeBoth(payload);
+        log("✅ 전송 완료!");
       } catch (e) {
         log("❌ send 실패:", String(e));
       }
@@ -243,6 +258,7 @@
         await writeBoth(payload);
         strokes = [];
         clearLocal();
+        log("🧹 클리어 전송 완료");
       } catch (e) {
         log("❌ clear 실패:", String(e));
       }
