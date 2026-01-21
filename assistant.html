@@ -2,47 +2,192 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
   <title>Chalkboard Assistant</title>
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 16px; background:#0b0b0b; color:#fff; }
-    .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
-    input, button { font-size: 16px; padding: 10px 12px; border-radius:10px; border: 1px solid #333; }
-    input { background:#111; color:#fff; }
-    button { background:#1f6feb; color:#fff; border:none; font-weight:700; }
-    button.secondary { background:#222; }
-    #log { white-space: pre-wrap; background: #111; color: #ddd; padding: 12px; border-radius: 12px; margin-top: 12px; border:1px solid #222; max-height: 400px; overflow-y: auto; }
-    #pad { width: 100%; height: 320px; border: 1px solid #333; border-radius: 14px; touch-action: none; background:#0f0f0f; }
-    .pill { display:inline-block; padding: 4px 10px; border-radius: 999px; background:#222; border:1px solid #333; font-size:12px; }
-    .ok { background:#123b1f; border-color:#1f7a3a; }
-    .bad { background:#3b1212; border-color:#7a1f1f; }
-    .muted { color:#bdbdbd; font-size:12px; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0b0b0b;
+      color: #fff;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+    
+    .header {
+      padding: 16px 20px;
+      border-bottom: 1px solid #333;
+      text-align: center;
+      flex-shrink: 0;
+    }
+    
+    .title {
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+    
+    .room-info {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    
+    input {
+      font-size: 14px;
+      padding: 8px 12px;
+      border-radius: 8px;
+      border: 1px solid #333;
+      background: #111;
+      color: #fff;
+      text-align: center;
+      text-transform: uppercase;
+      width: 100px;
+    }
+    
+    button {
+      font-size: 14px;
+      padding: 8px 16px;
+      border-radius: 8px;
+      border: none;
+      background: #1f6feb;
+      color: #fff;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    
+    button:active {
+      background: #1566d6;
+    }
+    
+    button.secondary {
+      background: #333;
+    }
+    
+    button.secondary:active {
+      background: #444;
+    }
+    
+    .canvas-container {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      overflow: hidden;
+    }
+    
+    #pad {
+      width: 100%;
+      max-width: 100%;
+      aspect-ratio: 3/4; /* 세로 모드 비율 (가로:세로 = 3:4) */
+      border: 2px solid #333;
+      border-radius: 12px;
+      touch-action: none;
+      background: #0f0f0f;
+    }
+    
+    .controls {
+      padding: 16px 20px;
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      border-top: 1px solid #333;
+      flex-shrink: 0;
+      flex-wrap: wrap;
+    }
+    
+    .pill {
+      display: inline-block;
+      padding: 5px 10px;
+      border-radius: 999px;
+      background: #222;
+      border: 1px solid #333;
+      font-size: 11px;
+    }
+    
+    .ok {
+      background: #123b1f;
+      border-color: #1f7a3a;
+      color: #00ff88;
+    }
+    
+    .bad {
+      background: #3b1212;
+      border-color: #7a1f1f;
+      color: #ff6b6b;
+    }
+
+    /* 가로 모드 경고 */
+    .landscape-warning {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.95);
+      z-index: 9999;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 20px;
+    }
+    
+    .landscape-warning.show {
+      display: flex;
+    }
+    
+    .rotate-icon {
+      font-size: 60px;
+      margin-bottom: 20px;
+    }
+    
+    .landscape-warning-text {
+      font-size: 18px;
+      font-weight: 600;
+    }
+    
+    @media screen and (orientation: landscape) and (max-height: 500px) {
+      .landscape-warning {
+        display: flex;
+      }
+      .header, .canvas-container, .controls {
+        display: none;
+      }
+    }
   </style>
 </head>
 <body>
-  <h2 style="margin:0 0 8px 0;">Chalkboard Assistant</h2>
-
-  <div class="row" style="margin-bottom:10px;">
-    <span class="muted">Room</span>
-    <input id="room" placeholder="6자리 Room ID" maxlength="6" />
-    <button id="btnConnect">연결</button>
-    <span id="conn" class="pill bad">DB 끊김</span>
-    <span id="presence" class="pill bad">presence: off</span>
+  <!-- 가로 모드 경고 -->
+  <div class="landscape-warning">
+    <div class="rotate-icon">📱</div>
+    <div class="landscape-warning-text">세로 모드로 회전해주세요</div>
   </div>
 
-  <p class="muted" style="margin-top:0;">
-    아래 패드에 선을 그리고 <b>전송</b>을 누르면 iPad에 그림이 나타납니다.
-  </p>
+  <div class="header">
+    <div class="title">Chalkboard Assistant</div>
+    <div class="room-info">
+      <input id="room" placeholder="Room ID" maxlength="6" />
+      <button id="btnConnect">연결</button>
+      <span id="conn" class="pill bad">대기중</span>
+    </div>
+  </div>
 
-  <canvas id="pad"></canvas>
+  <div class="canvas-container">
+    <canvas id="pad"></canvas>
+  </div>
 
-  <div class="row" style="margin-top:10px;">
+  <div class="controls">
     <button id="btnSend">전송</button>
-    <button id="btnClear" class="secondary">지우기(클리어 이벤트)</button>
-    <button id="btnReset" class="secondary">로컬 리셋</button>
+    <button id="btnClear" class="secondary">지우기</button>
   </div>
-
-  <div id="log"></div>
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
@@ -50,7 +195,7 @@
       getDatabase, ref, set, push, onValue, serverTimestamp, onDisconnect
     } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 
-    // ====== Firebase Web Config ======
+    // ====== Firebase Config ======
     const firebaseConfig = {
       apiKey: "AIzaSyB8OTEF1deQf0tLMElQAH3iyMFcRnL_2lI",
       authDomain: "syz-test.firebaseapp.com",
@@ -65,9 +210,8 @@
     const $ = (id) => document.getElementById(id);
     const roomInput = $("room");
     const connPill = $("conn");
-    const presencePill = $("presence");
-    const logEl = $("log");
 
+    // URL에서 room 파라미터 읽기
     const qs = new URLSearchParams(location.search);
     if (qs.get("room")) roomInput.value = String(qs.get("room")).trim().toUpperCase();
 
@@ -76,71 +220,54 @@
     let isDbConnected = false;
     let seq = 0;
 
-    function log(...args) {
-      const msg = args.map(a => (typeof a === "string" ? a : JSON.stringify(a, null, 2))).join(" ");
-      logEl.textContent = msg + "\n\n" + logEl.textContent;
-    }
-
-    // ====== .info/connected ======
+    // ====== DB 연결 상태 ======
     onValue(ref(db, ".info/connected"), (snap) => {
       isDbConnected = !!snap.val();
-      connPill.textContent = isDbConnected ? "DB 연결됨" : "DB 끊김";
+      connPill.textContent = isDbConnected ? "✅ 연결됨" : "대기중";
       connPill.className = "pill " + (isDbConnected ? "ok" : "bad");
     });
 
     async function connect() {
       roomId = String(roomInput.value || "").trim().toUpperCase();
       if (!roomId) {
-        alert("roomId를 입력하세요");
+        alert("Room ID를 입력하세요");
         return;
       }
-      log("🔌 connect:", { roomId, clientId });
 
-      // presence: rooms/<room>/presence/assistant/<clientId>
+      console.log("🔌 연결:", roomId);
+
+      // presence 설정
       const pRef = ref(db, `rooms/${roomId}/presence/assistant/${clientId}`);
-
-      // onDisconnect 등록
       try {
         await onDisconnect(pRef).set({ online: false, ts: serverTimestamp(), clientId });
-      } catch (e) {
-        log("⚠️ onDisconnect 등록 실패:", String(e));
-      }
-
-      // 지금 온라인 표시
-      try {
         await set(pRef, { online: true, ts: serverTimestamp(), clientId, ua: navigator.userAgent });
-        presencePill.textContent = "presence: on";
-        presencePill.className = "pill ok";
+        console.log("✅ 연결 완료");
       } catch (e) {
-        presencePill.textContent = "presence: err";
-        presencePill.className = "pill bad";
-        log("❌ presence set 실패:", String(e));
+        console.error("❌ 연결 실패:", e);
+        alert("연결 실패: " + e.message);
       }
-
-      // 디버그: latest가 보이는지 한번 읽어보기(선택)
-      const latestRef = ref(db, `rooms/${roomId}/latest`);
-      onValue(latestRef, (s) => {
-        const v = s.val();
-        if (v) log("👀 latest now:", v);
-      }, { onlyOnce: true });
-
-      log("✅ connected ready");
     }
 
-    // ====== Drawing pad ======
+    // ====== Canvas 그리기 ======
     const canvas = $("pad");
     const ctx = canvas.getContext("2d");
 
     function resizeCanvas() {
       const dpr = window.devicePixelRatio || 1;
       const rect = canvas.getBoundingClientRect();
+      
+      // 실제 캔버스 크기를 rect 크기와 동일하게 설정
       canvas.width = Math.floor(rect.width * dpr);
       canvas.height = Math.floor(rect.height * dpr);
+      
+      // 스케일 변환 적용
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      
       ctx.lineWidth = 3;
       ctx.lineJoin = "round";
       ctx.lineCap = "round";
       ctx.strokeStyle = "#ffffff";
+      
       clearLocal();
     }
 
@@ -162,7 +289,7 @@
       const rect = canvas.getBoundingClientRect();
       const x = (e.clientX ?? e.touches?.[0]?.clientX) - rect.left;
       const y = (e.clientY ?? e.touches?.[0]?.clientY) - rect.top;
-      return { x, y, t: Date.now() };
+      return { x, y };
     }
 
     function beginStroke(p) {
@@ -195,36 +322,44 @@
     canvas.addEventListener("pointerup", (e) => endStroke(pointFromEvent(e)));
     canvas.addEventListener("pointercancel", () => endStroke());
 
-    // ====== Send Payload ======
+    // ====== Firebase 전송 ======
     async function writeBoth(payload) {
       if (!roomId) await connect();
 
       const latestPath = `rooms/${roomId}/latest`;
       const eventsPath = `rooms/${roomId}/events`;
 
-      // 1) latest overwrite
       await set(ref(db, latestPath), payload);
-      // 2) events append
       await push(ref(db, eventsPath), payload);
 
-      log("✅ writeBoth:", { latestPath, eventsPath, type: payload.type, seq: payload.seq, strokeCount: payload.data?.length });
+      console.log("✅ 전송 완료:", payload.type);
     }
 
     $("btnConnect").addEventListener("click", connect);
 
     $("btnSend").addEventListener("click", async () => {
-      if (!isDbConnected) log("⚠️ DB 연결이 불안정할 수 있음(.info/connected=false)");
+      if (!isDbConnected) {
+        alert("데이터베이스에 연결되지 않았습니다");
+        return;
+      }
       
       if (strokes.length === 0) {
-        log("⚠️ 전송할 그림이 없습니다. 먼저 그림을 그려주세요.");
+        alert("전송할 그림이 없습니다");
         return;
       }
 
-      // iPad가 이해할 수 있는 형식으로 변환
+      // iPad가 이해하는 형식으로 변환
+      const rect = canvas.getBoundingClientRect();
+      
       const formattedStrokes = strokes.map(pointArray => ({
-        points: pointArray.map(p => ({ x: p.x, y: p.y })), // t 제거, x,y만
-        width: 15, // 기본 분필 굵기
-        tool: "chalk" // 분필 도구
+        points: pointArray.map(p => ({ 
+          x: p.x,
+          y: p.y
+        })),
+        width: 15,
+        tool: "chalk",
+        canvasWidth: rect.width,
+        canvasHeight: rect.height
       }));
 
       const payload = {
@@ -236,13 +371,12 @@
         ts: serverTimestamp(),
       };
 
-      log("📤 전송 데이터:", { strokeCount: formattedStrokes.length, totalPoints: formattedStrokes.reduce((sum, s) => sum + s.points.length, 0) });
-
       try {
         await writeBoth(payload);
-        log("✅ 전송 완료!");
+        console.log(`📤 전송: ${formattedStrokes.length}개 stroke (${rect.width}x${rect.height})`);
       } catch (e) {
-        log("❌ send 실패:", String(e));
+        console.error("❌ 전송 실패:", e);
+        alert("전송 실패: " + e.message);
       }
     });
 
@@ -254,23 +388,19 @@
         seq: ++seq,
         ts: serverTimestamp(),
       };
+      
       try {
         await writeBoth(payload);
         strokes = [];
         clearLocal();
-        log("🧹 클리어 전송 완료");
+        console.log("🧹 화면 지움");
       } catch (e) {
-        log("❌ clear 실패:", String(e));
+        console.error("❌ 지우기 실패:", e);
+        alert("지우기 실패: " + e.message);
       }
     });
 
-    $("btnReset").addEventListener("click", () => {
-      strokes = [];
-      clearLocal();
-      log("↩️ local reset");
-    });
-
-    // 자동 연결(쿼리에 room 있으면)
+    // URL에 room이 있으면 자동 연결
     if (roomInput.value) connect();
   </script>
 </body>
