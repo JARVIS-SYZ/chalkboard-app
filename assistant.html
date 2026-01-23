@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ko">
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
@@ -17,16 +17,16 @@
     }
     
     .header {
-      padding: 16px 20px;
+      padding: 10px 16px;
       border-bottom: 1px solid #333;
       text-align: center;
       flex-shrink: 0;
     }
     
     .title {
-      font-size: 20px;
+      font-size: 18px;
       font-weight: 700;
-      margin-bottom: 10px;
+      margin-bottom: 8px;
     }
     
     .room-info {
@@ -37,21 +37,25 @@
       flex-wrap: wrap;
     }
     
-    input {
+    .room-display {
       font-size: 14px;
-      padding: 8px 12px;
+      padding: 6px 12px;
       border-radius: 8px;
-      border: 1px solid #333;
       background: #111;
+      border: 1px solid #333;
+      color: #999;
+    }
+    
+    .room-id {
       color: #fff;
-      text-align: center;
-      text-transform: uppercase;
-      width: 100px;
+      font-weight: 700;
+      font-size: 16px;
+      letter-spacing: 1px;
     }
     
     button {
       font-size: 14px;
-      padding: 8px 16px;
+      padding: 10px 20px;
       border-radius: 8px;
       border: none;
       background: #1f6feb;
@@ -59,6 +63,7 @@
       font-weight: 700;
       cursor: pointer;
       transition: background 0.2s;
+      touch-action: manipulation;
     }
     
     button:active {
@@ -78,14 +83,16 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      padding: 16px;
+      padding: 8px;
       overflow: hidden;
+      min-height: 0;
     }
     
     #pad {
       width: 100%;
       max-width: 100%;
-      aspect-ratio: 3/4; /* 세로 모드 비율 (가로:세로 = 3:4) */
+      height: 100%;
+      max-height: 100%;
       border: 2px solid #333;
       border-radius: 12px;
       touch-action: none;
@@ -93,13 +100,12 @@
     }
     
     .controls {
-      padding: 16px 20px;
+      padding: 12px 16px;
       display: flex;
       gap: 10px;
       justify-content: center;
       border-top: 1px solid #333;
       flex-shrink: 0;
-      flex-wrap: wrap;
     }
     
     .pill {
@@ -168,15 +174,14 @@
   <!-- 가로 모드 경고 -->
   <div class="landscape-warning">
     <div class="rotate-icon">📱</div>
-    <div class="landscape-warning-text">세로 모드로 회전해주세요</div>
+    <div class="landscape-warning-text">Please rotate to portrait mode</div>
   </div>
 
   <div class="header">
     <div class="title">Chalkboard Assistant</div>
     <div class="room-info">
-      <input id="room" placeholder="Room ID" maxlength="6" />
-      <button id="btnConnect">연결</button>
-      <span id="conn" class="pill bad">대기중</span>
+      <span class="room-display">Room: <span class="room-id" id="roomDisplay">-</span></span>
+      <span id="conn" class="pill bad">Waiting</span>
     </div>
   </div>
 
@@ -185,8 +190,8 @@
   </div>
 
   <div class="controls">
-    <button id="btnSend">전송</button>
-    <button id="btnClear" class="secondary">지우기</button>
+    <button id="btnSend">Send</button>
+    <button id="btnClear" class="secondary">Clear</button>
   </div>
 
   <script type="module">
@@ -208,45 +213,52 @@
     const db = getDatabase(app);
 
     const $ = (id) => document.getElementById(id);
-    const roomInput = $("room");
+    const roomDisplay = $("roomDisplay");
     const connPill = $("conn");
 
     // URL에서 room 파라미터 읽기
     const qs = new URLSearchParams(location.search);
-    if (qs.get("room")) roomInput.value = String(qs.get("room")).trim().toUpperCase();
+    const roomId = String(qs.get("room") || "").trim().toUpperCase();
+    
+    if (!roomId) {
+      alert("No Room ID provided in URL");
+      roomDisplay.textContent = "ERROR";
+    } else {
+      roomDisplay.textContent = roomId;
+      console.log("🔌 Room ID:", roomId);
+    }
 
     const clientId = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + "-" + Math.random().toString(16).slice(2));
-    let roomId = "";
     let isDbConnected = false;
     let seq = 0;
 
     // ====== DB 연결 상태 ======
     onValue(ref(db, ".info/connected"), (snap) => {
       isDbConnected = !!snap.val();
-      connPill.textContent = isDbConnected ? "✅ 연결됨" : "대기중";
+      connPill.textContent = isDbConnected ? "✅ Connected" : "Waiting";
       connPill.className = "pill " + (isDbConnected ? "ok" : "bad");
     });
 
+    // ====== 자동 연결 ======
     async function connect() {
-      roomId = String(roomInput.value || "").trim().toUpperCase();
-      if (!roomId) {
-        alert("Room ID를 입력하세요");
-        return;
-      }
+      if (!roomId) return;
 
-      console.log("🔌 연결:", roomId);
+      console.log("🔌 Connecting to room:", roomId);
 
       // presence 설정
       const pRef = ref(db, `rooms/${roomId}/presence/assistant/${clientId}`);
       try {
         await onDisconnect(pRef).set({ online: false, ts: serverTimestamp(), clientId });
         await set(pRef, { online: true, ts: serverTimestamp(), clientId, ua: navigator.userAgent });
-        console.log("✅ 연결 완료");
+        console.log("✅ Connected");
       } catch (e) {
-        console.error("❌ 연결 실패:", e);
-        alert("연결 실패: " + e.message);
+        console.error("❌ Connection failed:", e);
+        alert("Connection failed: " + e.message);
       }
     }
+
+    // URL에 room이 있으면 자동 연결
+    if (roomId) connect();
 
     // ====== Canvas 그리기 ======
     const canvas = $("pad");
@@ -324,7 +336,10 @@
 
     // ====== Firebase 전송 ======
     async function writeBoth(payload) {
-      if (!roomId) await connect();
+      if (!roomId) {
+        alert("No Room ID");
+        return;
+      }
 
       const latestPath = `rooms/${roomId}/latest`;
       const eventsPath = `rooms/${roomId}/events`;
@@ -332,19 +347,17 @@
       await set(ref(db, latestPath), payload);
       await push(ref(db, eventsPath), payload);
 
-      console.log("✅ 전송 완료:", payload.type);
+      console.log("✅ Sent:", payload.type);
     }
-
-    $("btnConnect").addEventListener("click", connect);
 
     $("btnSend").addEventListener("click", async () => {
       if (!isDbConnected) {
-        alert("데이터베이스에 연결되지 않았습니다");
+        alert("Not connected to database");
         return;
       }
       
       if (strokes.length === 0) {
-        alert("전송할 그림이 없습니다");
+        alert("No drawing to send");
         return;
       }
 
@@ -373,10 +386,10 @@
 
       try {
         await writeBoth(payload);
-        console.log(`📤 전송: ${formattedStrokes.length}개 stroke (${rect.width}x${rect.height})`);
+        console.log(`📤 Sent: ${formattedStrokes.length} strokes (${rect.width}x${rect.height})`);
       } catch (e) {
-        console.error("❌ 전송 실패:", e);
-        alert("전송 실패: " + e.message);
+        console.error("❌ Send failed:", e);
+        alert("Send failed: " + e.message);
       }
     });
 
@@ -393,15 +406,12 @@
         await writeBoth(payload);
         strokes = [];
         clearLocal();
-        console.log("🧹 화면 지움");
+        console.log("🧹 Cleared");
       } catch (e) {
-        console.error("❌ 지우기 실패:", e);
-        alert("지우기 실패: " + e.message);
+        console.error("❌ Clear failed:", e);
+        alert("Clear failed: " + e.message);
       }
     });
-
-    // URL에 room이 있으면 자동 연결
-    if (roomInput.value) connect();
   </script>
 </body>
 </html>
