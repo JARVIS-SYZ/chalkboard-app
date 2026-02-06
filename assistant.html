@@ -1,269 +1,418 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Chalkboard Assistant</title>
-  <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 16px; background:#0b0b0b; color:#fff; }
-    .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
-    input, button { font-size: 16px; padding: 10px 12px; border-radius:10px; border: 1px solid #333; }
-    input { background:#111; color:#fff; }
-    button { background:#1f6feb; color:#fff; border:none; font-weight:700; }
-    button.secondary { background:#222; }
-    #log { white-space: pre-wrap; background: #111; color: #ddd; padding: 12px; border-radius: 12px; margin-top: 12px; border:1px solid #222; }
-    #pad { width: 100%; height: 320px; border: 1px solid #333; border-radius: 14px; touch-action: none; background:#0f0f0f; }
-    .pill { display:inline-block; padding: 4px 10px; border-radius: 999px; background:#222; border:1px solid #333; font-size:12px; }
-    .ok { background:#123b1f; border-color:#1f7a3a; }
-    .bad { background:#3b1212; border-color:#7a1f1f; }
-    .muted { color:#bdbdbd; font-size:12px; }
-  </style>
+<meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="mobile-web-app-capable" content="yes" />
+<title>Chalkboard Assistant</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+    
+    html {
+      height: 100%;
+      height: 100dvh;
+    }
+    
+body { 
+font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+background: #0b0b0b;
+color: #fff;
+display: flex;
+flex-direction: column;
+      height: 100vh;
+      height: 100%;
+      height: 100dvh;
+overflow: hidden;
+      padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+.header {
+      padding: 8px 12px;
+border-bottom: 1px solid #333;
+text-align: center;
+flex-shrink: 0;
+}
+
+.title {
+      font-size: 16px;
+font-weight: 700;
+      margin-bottom: 6px;
+}
+
+.room-info {
+display: flex;
+      gap: 6px;
+align-items: center;
+justify-content: center;
+flex-wrap: wrap;
+}
+
+.room-display {
+      font-size: 12px;
+      padding: 4px 10px;
+      border-radius: 6px;
+background: #111;
+border: 1px solid #333;
+color: #999;
+}
+
+.room-id {
+color: #fff;
+font-weight: 700;
+      font-size: 14px;
+letter-spacing: 1px;
+}
+
+button {
+font-size: 14px;
+padding: 10px 20px;
+border-radius: 8px;
+border: none;
+background: #1f6feb;
+color: #fff;
+font-weight: 700;
+cursor: pointer;
+transition: background 0.2s;
+touch-action: manipulation;
+}
+
+button:active {
+background: #1566d6;
+}
+
+button.secondary {
+background: #333;
+}
+
+button.secondary:active {
+background: #444;
+}
+
+.canvas-container {
+flex: 1;
+display: flex;
+align-items: center;
+justify-content: center;
+      padding: 6px 8px;
+overflow: hidden;
+min-height: 0;
+}
+
+#pad {
+width: 100%;
+max-width: 100%;
+      max-height: 100%;
+aspect-ratio: 3/4;
+border: 2px solid #333;
+      border-radius: 10px;
+touch-action: none;
+background: #0f0f0f;
+}
+
+.controls {
+      padding: 8px 12px;
+      padding-bottom: calc(8px + env(safe-area-inset-bottom));
+display: flex;
+gap: 8px;
+justify-content: center;
+border-top: 1px solid #333;
+flex-shrink: 0;
+}
+
+.pill {
+display: inline-block;
+padding: 5px 10px;
+border-radius: 999px;
+background: #222;
+border: 1px solid #333;
+font-size: 11px;
+}
+
+.ok {
+background: #123b1f;
+border-color: #1f7a3a;
+color: #00ff88;
+}
+
+.bad {
+background: #3b1212;
+border-color: #7a1f1f;
+color: #ff6b6b;
+}
+
+.landscape-warning {
+display: none;
+position: fixed;
+top: 0;
+left: 0;
+width: 100%;
+height: 100%;
+background: rgba(0, 0, 0, 0.95);
+z-index: 9999;
+flex-direction: column;
+align-items: center;
+justify-content: center;
+text-align: center;
+padding: 20px;
+}
+
+.landscape-warning.show {
+display: flex;
+}
+
+.rotate-icon {
+font-size: 60px;
+margin-bottom: 20px;
+}
+
+.landscape-warning-text {
+font-size: 18px;
+font-weight: 600;
+}
+
+@media screen and (orientation: landscape) and (max-height: 500px) {
+.landscape-warning {
+display: flex;
+}
+.header, .canvas-container, .controls {
+display: none;
+}
+}
+</style>
 </head>
 <body>
-  <h2 style="margin:0 0 8px 0;">Chalkboard Assistant</h2>
+<div class="landscape-warning">
+<div class="rotate-icon">📱</div>
+<div class="landscape-warning-text">Please rotate to portrait mode</div>
+</div>
 
-  <div class="row" style="margin-bottom:10px;">
-    <span class="muted">Room</span>
-    <input id="room" placeholder="6-digit Room ID" maxlength="6" />
-    <button id="btnConnect">Connect</button>
-    <span id="conn" class="pill bad">DB Disconnected</span>
-    <span id="presence" class="pill bad">presence: off</span>
-  </div>
+<div class="header">
+<div class="title">Chalkboard Assistant</div>
+<div class="room-info">
+<span class="room-display">Room: <span class="room-id" id="roomDisplay">-</span></span>
+<span id="conn" class="pill bad">Waiting</span>
+</div>
+</div>
 
-  <p class="muted" style="margin-top:0;">
-    <b>Send</b>: Send to iPad, then clear iPhone screen<br>
-    <b>Clear All</b>: Delete all drawings including iPad<br>
-    <b>Clear iPhone</b>: Clear iPhone screen only (iPad unaffected)
-  </p>
+<div class="canvas-container">
+<canvas id="pad"></canvas>
+</div>
 
-  <canvas id="pad"></canvas>
+<div class="controls">
+<button id="btnSend">Send</button>
+<button id="btnClearAll" class="secondary">Clear All</button>
+<button id="btnClearLocal" class="secondary">Clear iPhone</button>
+</div>
 
-  <div class="row" style="margin-top:10px;">
-    <button id="btnSend">Send</button>
-    <button id="btnClear" class="secondary">Clear All</button>
-    <button id="btnReset" class="secondary">Clear iPhone</button>
-  </div>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
+import {
+getDatabase, ref, set, push, onValue, serverTimestamp, onDisconnect
+} from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 
-  <div id="log"></div>
+const firebaseConfig = {
+apiKey: "AIzaSyB8OTEF1deQf0tLMElQAH3iyMFcRnL_2lI",
+authDomain: "syz-test.firebaseapp.com",
+databaseURL: "https://syz-test-default-rtdb.asia-southeast1.firebasedatabase.app",
+projectId: "syz-test",
+appId: "1:85684795276:web:eb64abb9dd16ee30e788a9",
+};
 
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
-    import {
-      getDatabase, ref, set, push, onValue, serverTimestamp, onDisconnect
-    } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
 
-    // ====== Firebase Web Config ======
-    const firebaseConfig = {
-      apiKey: "AIzaSyB8OTEF1deQf0tLMElQAH3iyMFcRnL_2lI",
-      authDomain: "syz-test.firebaseapp.com",
-      databaseURL: "https://syz-test-default-rtdb.asia-southeast1.firebasedatabase.app",
-      projectId: "syz-test",
-      appId: "1:85684795276:web:eb64abb9dd16ee30e788a9",
-    };
+const $ = (id) => document.getElementById(id);
+const roomDisplay = $("roomDisplay");
+const connPill = $("conn");
 
-    const app = initializeApp(firebaseConfig);
-    const db = getDatabase(app);
+const qs = new URLSearchParams(location.search);
+const roomId = String(qs.get("room") || "").trim().toUpperCase();
 
-    const $ = (id) => document.getElementById(id);
-    const roomInput = $("room");
-    const connPill = $("conn");
-    const presencePill = $("presence");
-    const logEl = $("log");
+if (!roomId) {
+alert("No Room ID provided in URL");
+roomDisplay.textContent = "ERROR";
+} else {
+roomDisplay.textContent = roomId;
+}
 
-    const qs = new URLSearchParams(location.search);
-    if (qs.get("room")) roomInput.value = String(qs.get("room")).trim().toUpperCase();
+const clientId = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + "-" + Math.random().toString(16).slice(2));
+let isDbConnected = false;
+let seq = 0;
 
-    const clientId = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + "-" + Math.random().toString(16).slice(2));
-    let roomId = "";
-    let isDbConnected = false;
-    let seq = 0;
+onValue(ref(db, ".info/connected"), (snap) => {
+isDbConnected = !!snap.val();
+connPill.textContent = isDbConnected ? "Connected" : "Waiting";
+connPill.className = "pill " + (isDbConnected ? "ok" : "bad");
+});
 
-    function log(...args) {
-      const msg = args.map(a => (typeof a === "string" ? a : JSON.stringify(a, null, 2))).join(" ");
-      logEl.textContent = msg + "\n\n" + logEl.textContent;
-    }
+async function connect() {
+if (!roomId) return;
 
-    // ====== .info/connected ======
-    onValue(ref(db, ".info/connected"), (snap) => {
-      isDbConnected = !!snap.val();
-      connPill.textContent = isDbConnected ? "DB Connected" : "DB Disconnected";
-      connPill.className = "pill " + (isDbConnected ? "ok" : "bad");
-    });
+const pRef = ref(db, `rooms/${roomId}/presence/assistant/${clientId}`);
+try {
+await onDisconnect(pRef).set({ online: false, ts: serverTimestamp(), clientId });
+await set(pRef, { online: true, ts: serverTimestamp(), clientId, ua: navigator.userAgent });
+} catch (e) {
+alert("Connection failed: " + e.message);
+}
+}
 
-    async function connect() {
-      roomId = String(roomInput.value || "").trim().toUpperCase();
-      if (!roomId) {
-        alert("Please enter room ID");
-        return;
-      }
-      log("🔌 connect:", { roomId, clientId });
+if (roomId) connect();
 
-      const pRef = ref(db, `rooms/${roomId}/presence/assistant/${clientId}`);
+const canvas = $("pad");
+const ctx = canvas.getContext("2d");
 
-      try {
-        await onDisconnect(pRef).set({ online: false, ts: serverTimestamp(), clientId });
-      } catch (e) {
-        log("⚠️ onDisconnect 등록 실패:", String(e));
-      }
+function resizeCanvas() {
+const dpr = window.devicePixelRatio || 1;
+const rect = canvas.getBoundingClientRect();
 
-      try {
-        await set(pRef, { online: true, ts: serverTimestamp(), clientId, ua: navigator.userAgent });
-        presencePill.textContent = "presence: on";
-        presencePill.className = "pill ok";
-      } catch (e) {
-        presencePill.textContent = "presence: err";
-        presencePill.className = "pill bad";
-        log("❌ presence set 실패:", String(e));
-      }
+canvas.width = Math.floor(rect.width * dpr);
+canvas.height = Math.floor(rect.height * dpr);
 
-      log("✅ connected ready");
-    }
+ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    // ====== Drawing pad ======
-    const canvas = $("pad");
-    const ctx = canvas.getContext("2d");
+ctx.lineWidth = 3;
+ctx.lineJoin = "round";
+ctx.lineCap = "round";
+ctx.strokeStyle = "#ffffff";
 
-    function resizeCanvas() {
-      const dpr = window.devicePixelRatio || 1;
-      const rect = canvas.getBoundingClientRect();
-      canvas.width = Math.floor(rect.width * dpr);
-      canvas.height = Math.floor(rect.height * dpr);
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.lineWidth = 3;
-      ctx.lineJoin = "round";
-      ctx.lineCap = "round";
-      ctx.strokeStyle = "#ffffff";
-      clearLocal();
-    }
+clearLocal();
+}
 
-    function clearLocal() {
-      const rect = canvas.getBoundingClientRect();
-      ctx.clearRect(0, 0, rect.width, rect.height);
-      ctx.fillStyle = "#0f0f0f";
-      ctx.fillRect(0, 0, rect.width, rect.height);
-    }
+function clearLocal() {
+const rect = canvas.getBoundingClientRect();
+ctx.clearRect(0, 0, rect.width, rect.height);
+ctx.fillStyle = "#0f0f0f";
+ctx.fillRect(0, 0, rect.width, rect.height);
+}
 
-    window.addEventListener("resize", resizeCanvas);
-    resizeCanvas();
+window.addEventListener("resize", resizeCanvas);
+resizeCanvas();
 
-    let drawing = false;
-    let currentStroke = [];
-    let strokes = [];
+let drawing = false;
+let currentStroke = [];
+let strokes = [];
 
-    function pointFromEvent(e) {
-      const rect = canvas.getBoundingClientRect();
-      const x = (e.clientX ?? e.touches?.[0]?.clientX) - rect.left;
-      const y = (e.clientY ?? e.touches?.[0]?.clientY) - rect.top;
-      return { x, y, t: Date.now() };
-    }
+function pointFromEvent(e) {
+const rect = canvas.getBoundingClientRect();
+const x = (e.clientX ?? e.touches?.[0]?.clientX) - rect.left;
+const y = (e.clientY ?? e.touches?.[0]?.clientY) - rect.top;
+return { x, y };
+}
 
-    function beginStroke(p) {
-      drawing = true;
-      currentStroke = [p];
-      ctx.beginPath();
-      ctx.moveTo(p.x, p.y);
-    }
+function beginStroke(p) {
+drawing = true;
+currentStroke = [p];
+ctx.beginPath();
+ctx.moveTo(p.x, p.y);
+}
 
-    function moveStroke(p) {
-      if (!drawing) return;
-      currentStroke.push(p);
-      ctx.lineTo(p.x, p.y);
-      ctx.stroke();
-    }
+function moveStroke(p) {
+if (!drawing) return;
+currentStroke.push(p);
+ctx.lineTo(p.x, p.y);
+ctx.stroke();
+}
 
-    function endStroke(p) {
-      if (!drawing) return;
-      drawing = false;
-      if (p) currentStroke.push(p);
-      if (currentStroke.length >= 2) {
-        const rect = canvas.getBoundingClientRect();
-        strokes.push({
-          points: currentStroke,
-          canvasWidth: rect.width,
-          canvasHeight: rect.height,
-        });
-      }
-      currentStroke = [];
-    }
+function endStroke(p) {
+if (!drawing) return;
+drawing = false;
+if (p) currentStroke.push(p);
+if (currentStroke.length >= 2) strokes.push(currentStroke);
+currentStroke = [];
+}
 
-    canvas.addEventListener("pointerdown", (e) => {
-      canvas.setPointerCapture(e.pointerId);
-      beginStroke(pointFromEvent(e));
-    });
-    canvas.addEventListener("pointermove", (e) => moveStroke(pointFromEvent(e)));
-    canvas.addEventListener("pointerup", (e) => endStroke(pointFromEvent(e)));
-    canvas.addEventListener("pointercancel", () => endStroke());
+canvas.addEventListener("pointerdown", (e) => {
+canvas.setPointerCapture(e.pointerId);
+beginStroke(pointFromEvent(e));
+});
+canvas.addEventListener("pointermove", (e) => moveStroke(pointFromEvent(e)));
+canvas.addEventListener("pointerup", (e) => endStroke(pointFromEvent(e)));
+canvas.addEventListener("pointercancel", () => endStroke());
 
-    // ====== Send Payload ======
-    async function writeBoth(payload) {
-      if (!roomId) await connect();
+async function writeBoth(payload) {
+if (!roomId) {
+alert("No Room ID");
+return;
+}
 
-      const latestPath = `rooms/${roomId}/latest`;
-      const eventsPath = `rooms/${roomId}/events`;
+const latestPath = `rooms/${roomId}/latest`;
+const eventsPath = `rooms/${roomId}/events`;
 
-      await set(ref(db, latestPath), payload);
-      await push(ref(db, eventsPath), payload);
+await set(ref(db, latestPath), payload);
+await push(ref(db, eventsPath), payload);
+}
 
-      log("✅ writeBoth:", { latestPath, eventsPath, type: payload.type, seq: payload.seq });
-    }
+// Send: iPad로 전송 후 iPhone 화면 클리어
+$("btnSend").addEventListener("click", async () => {
+if (!isDbConnected) {
+alert("Not connected to database");
+return;
+}
 
-    $("btnConnect").addEventListener("click", connect);
+if (strokes.length === 0) {
+alert("No drawing to send");
+return;
+}
 
-    $("btnSend").addEventListener("click", async () => {
-      if (!isDbConnected) log("⚠️ DB 연결이 불안정할 수 있음(.info/connected=false)");
-      
-      if (strokes.length === 0) {
-        log("⚠️ 그린 내용이 없습니다");
-        return;
-      }
-      
-      const payload = {
-        type: "strokes",
-        data: strokes,
-        from: "assistant",
-        clientId,
-        seq: ++seq,
-        ts: serverTimestamp(),
-      };
-      
-      try {
-        await writeBoth(payload);
-        log("✅ iPad로 전송 완료!");
-        
-        strokes = [];
-        clearLocal();
-        log("🧹 iPhone 화면 클리어됨 (iPad는 유지)");
-        
-      } catch (e) {
-        log("❌ 전송 실패:", String(e));
-      }
-    });
+const rect = canvas.getBoundingClientRect();
 
-    $("btnClear").addEventListener("click", async () => {
-      const payload = {
-        type: "clear",
-        from: "assistant",
-        clientId,
-        seq: ++seq,
-        ts: serverTimestamp(),
-      };
-      try {
-        await writeBoth(payload);
-        strokes = [];
-        clearLocal();
-        log("✅ 전체 클리어! (iPad 포함)");
-      } catch (e) {
-        log("❌ 전체 클리어 실패:", String(e));
-      }
-    });
+const formattedStrokes = strokes.map(pointArray => ({
+points: pointArray.map(p => ({ 
+x: p.x,
+y: p.y
+})),
+width: 15,
+tool: "chalk",
+canvasWidth: rect.width,
+canvasHeight: rect.height
+}));
 
-    $("btnReset").addEventListener("click", () => {
-      strokes = [];
-      clearLocal();
-      log("🧹 iPhone 화면만 클리어됨 (iPad는 영향 없음)");
-    });
+const payload = {
+type: "strokes",
+data: formattedStrokes,
+from: "assistant",
+clientId,
+seq: ++seq,
+ts: serverTimestamp(),
+};
 
-    if (roomInput.value) connect();
-  </script>
+try {
+await writeBoth(payload);
+strokes = [];
+clearLocal();
+} catch (e) {
+alert("Send failed: " + e.message);
+}
+});
+
+// Clear All: iPad 포함 전체 클리어
+$("btnClearAll").addEventListener("click", async () => {
+const payload = {
+type: "clear",
+from: "assistant",
+clientId,
+seq: ++seq,
+ts: serverTimestamp(),
+};
+
+try {
+await writeBoth(payload);
+strokes = [];
+clearLocal();
+} catch (e) {
+alert("Clear failed: " + e.message);
+}
+});
+
+// Clear iPhone: iPhone 화면만 클리어
+$("btnClearLocal").addEventListener("click", () => {
+strokes = [];
+clearLocal();
+});
+</script>
 </body>
 </html>
