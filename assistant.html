@@ -1,418 +1,1153 @@
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="mobile-web-app-capable" content="yes" />
-<title>Chalkboard Assistant</title>
-<style>
-* { margin: 0; padding: 0; box-sizing: border-box; }
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  SafeAreaView,
+  View,
+  Text,
+  Pressable,
+  StyleSheet,
+  StatusBar,
+  TouchableOpacity,
+  Dimensions,
+  ImageBackground,
+} from 'react-native';
+import { Canvas, Path as SkPath, Skia, Group, SkPath as SkiaPath } from '@shopify/react-native-skia';
+import database, { firebase, FirebaseDatabaseTypes } from '@react-native-firebase/database';
+import QRCode from 'react-native-qrcode-svg';
+import Slider from '@react-native-community/slider';
+
+const DB_URL = 'https://syz-test-default-rtdb.asia-southeast1.firebasedatabase.app/';
+
+// 화면 크기
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+// ===== 타입 정의 =====
+type ScreenType = 'qr' | 'chalkboard';
+type ToolType = 'chalk' | 'eraser';
+
+interface Point {
+  x: number;
+  y: number;
+  t?: number;
+}
+
+interface Stroke {
+  tool?: string;
+  points: Point[];
+  width?: number;
+  canvasWidth?: number;
+  canvasHeight?: number;
+  order?: number; // 렌더링 순서
+}
+
+interface Payload {
+  type: string;
+  data?: Stroke[];
+  from?: string;
+  clientId?: string;
+  seq?: number;
+  ts?: any;
+}
+
+interface Layer {
+  kind: 'chalk' | 'eraser';
+  corePath?: SkiaPath;
+  dustPath?: SkiaPath;
+  path?: SkiaPath;
+  order?: number; // 레이어 순서
+}
+
+// ===== 분필 설정 (최적화됨) =====
+const CHALK_CORE = 'rgba(230, 235, 228, 0.60)';
+const CHALK_DUST = 'rgba(230, 235, 228, 0.22)';
+
+const CHALK = {
+  baseWidth: 15,
+  thickWidth: 22,
+  density: 18,
+  spread: 0.55,
+  roughness: 0.9,
+  spacing: 4,
+};
+
+function makeRoomId(len: number = 6): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let out = '';
+  for (let i = 0; i < len; i++) out += chars[Math.floor(Math.random() * chars.length)];
+  return out;
+}
+
+function rand(min: number, max: number): number {
+  return Math.random() * (max - min) + min;
+}
+
+function addCircleCompat(path: SkiaPath, x: number, y: number, r: number): void {
+  if (typeof (path as any).addCircle === 'function') {
+    (path as any).addCircle(x, y, r);
+  } else {
+    const rect = Skia.XYWHRect(x - r, y - r, r * 2, r * 2);
+    path.addOval(rect);
+  }
+}
+
+interface SprayParticlesParams {
+  x: number;
+  y: number;
+  width: number;
+  corePath: SkiaPath;
+  dustPath: SkiaPath;
+  isThick: boolean;
+}
+
+function sprayParticles({ x, y, width, corePath, dustPath, isThick }: SprayParticlesParams): void {
+  const baseCount = CHALK.density * (isThick ? 1.25 : 1.0);
+  const count = Math.floor(baseCount);
+
+  const coreCount = Math.floor(count * 0.55);
+  const dustCount = Math.max(0, count - coreCount);
+
+  for (let i = 0; i < coreCount; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const r = Math.sqrt(Math.random()) * width * (CHALK.spread * 0.45);
+    const px = x + Math.cos(a) * r;
+    const py = y + Math.sin(a) * r;
+    const pr = rand(0.35, 1.35) * (isThick ? 1.35 : 1.0);
+    addCircleCompat(corePath, px, py, pr);
+  }
+
+  for (let i = 0; i < dustCount; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const r = Math.sqrt(Math.random()) * width * (CHALK.spread * 0.95);
+    const px = x + Math.cos(a) * r;
+    const py = y + Math.sin(a) * r;
+    const pr = rand(0.25, 0.9) * (isThick ? 1.15 : 1.0);
+    addCircleCompat(dustPath, px, py, pr);
+  }
+}
+
+export default function App() {
+  // ===== 모든 State (항상 같은 순서로) =====
+  const [currentScreen, setCurrentScreen] = useState<ScreenType>('qr');
+  const [roomId, setRoomId] = useState<string>('');
+  const [shareUrl, setShareUrl] = useState<string>('');
+  const [dbConnected, setDbConnected] = useState<boolean>(false);
+  const [assistantOnlineCount, setAssistantOnlineCount] = useState<number>(0);
+  const [externalLayers, setExternalLayers] = useState<Layer[]>([]); // 외부 레이어
+  const [localLayers, setLocalLayers] = useState<Layer[]>([]); // 로컬 레이어
+  const [globalEraserLayers, setGlobalEraserLayers] = useState<Layer[]>([]); // iPad 전역 지우개
+  const [penWidth, setPenWidth] = useState<number>(15);
+  const [eraserWidth, setEraserWidth] = useState<number>(40);
+  const [currentTool, setCurrentTool] = useState<ToolType>('chalk');
+  const [isDrawing, setIsDrawing] = useState<boolean>(false);
+  const [localStrokes, setLocalStrokes] = useState<Stroke[]>([]);
+  const [externalStrokes, setExternalStrokes] = useState<Stroke[]>([]);
+
+  // ===== 모든 Ref (항상 같은 순서로) =====
+  const externalLayersRef = useRef<Layer[]>([]);
+  const localLayersRef = useRef<Layer[]>([]);
+  const currentStrokeRef = useRef<Point[]>([]);
+  const baseLayerCountRef = useRef<number>(0);
+  const lastExternalTsRef = useRef<number>(0);
+  const lastRenderTimeRef = useRef<number>(0);
+  const globalOrderRef = useRef<number>(0); // 전역 레이어 순서 카운터
+  const dbRef = useRef<any>(null);
+  const pollTimerRef = useRef<number | null>(null);
+  const lastLatestTsRef = useRef<number>(0);
+  const tapCountRef = useRef<number>(0);
+  const tapTimerRef = useRef<number | null>(null);
+  const leftTapCountRef = useRef<number>(0);
+  const leftTapTimerRef = useRef<number | null>(null);
+  const leftLongPressTimerRef = useRef<number | null>(null);
+  const leftLongPressStartRef = useRef<number>(0);
+  const isInitializedRef = useRef(false);
+
+  // ===== 상수 =====
+  const renderThrottleMs = 50;
+  
+  const getDb = useCallback(() => {
+    if (!dbRef.current) {
+      console.log('🔥 Firebase 초기화 중...');
+      dbRef.current = firebase.app().database(DB_URL);
+    }
+    return dbRef.current;
+  }, []);
+
+  // ===== useEffect =====
+  useEffect(() => {
+    externalLayersRef.current = externalLayers;
+  }, [externalLayers]);
+
+  useEffect(() => {
+    localLayersRef.current = localLayers;
+  }, [localLayers]);
+
+  // localStrokes나 externalStrokes가 변경될 때 자동 렌더링
+  useEffect(() => {
+    console.log('🖍️ useEffect renderStrokes', `로컬=${localStrokes.length}, 외부=${externalStrokes.length}`);
+
+    // 외부 데이터에서 웹 캔버스 크기 가져오기
+    const firstWebStroke = externalStrokes.find(s => s.canvasWidth && s.canvasHeight);
+    const webCanvasWidth = firstWebStroke?.canvasWidth;
+    const webCanvasHeight = firstWebStroke?.canvasHeight;
+
+    // 1. 외부(iPhone) 데이터 렌더링
+    const newExternalLayers: Layer[] = [];
+    externalStrokes.forEach((stroke) => {
+      let scaleX = 1;
+      let scaleY = 1;
+      
+      if (webCanvasWidth && webCanvasHeight && stroke.canvasWidth) {
+        scaleX = SCREEN_WIDTH / webCanvasWidth;
+        scaleY = SCREEN_HEIGHT / webCanvasHeight;
+      }
+
+      if (stroke.tool === 'eraser') {
+        const eraserPath = Skia.Path.Make();
+        stroke.points.forEach((pt, idx) => {
+          const scaledX = pt.x * scaleX;
+          const scaledY = pt.y * scaleY;
+          
+          if (idx === 0) {
+            eraserPath.moveTo(scaledX, scaledY);
+          } else {
+            eraserPath.lineTo(scaledX, scaledY);
+          }
+        });
+
+        newExternalLayers.push({
+          kind: 'eraser',
+          path: eraserPath,
+        });
+      } else {
+        const { corePath, dustPath } = renderStrokeToPath(stroke, scaleX, scaleY, penWidth);
+        
+        newExternalLayers.push({
+          kind: 'chalk',
+          corePath,
+          dustPath,
+        });
+      }
+    });
+
+    // 2. 로컬(iPad) 데이터 렌더링 - 분필/지우개를 순서대로 섞어서
+    const newLocalLayers: Layer[] = [];
     
-    html {
-      height: 100%;
-      height: 100dvh;
+    localStrokes.forEach((stroke) => {
+      if (stroke.tool === 'eraser') {
+        const eraserPath = Skia.Path.Make();
+        stroke.points.forEach((pt, idx) => {
+          if (idx === 0) {
+            eraserPath.moveTo(pt.x, pt.y);
+          } else {
+            eraserPath.lineTo(pt.x, pt.y);
+          }
+        });
+
+        newLocalLayers.push({
+          kind: 'eraser',
+          path: eraserPath,
+        });
+      } else {
+        const { corePath, dustPath } = renderStrokeToPath(stroke);
+        
+        newLocalLayers.push({
+          kind: 'chalk',
+          corePath,
+          dustPath,
+        });
+      }
+    });
+
+    // 별도 state로 저장
+    setExternalLayers(newExternalLayers);
+    setLocalLayers(newLocalLayers);
+    setGlobalEraserLayers([]); // 사용하지 않음
+
+    console.log('✅ 렌더링 완료:', `외부=${newExternalLayers.length}, 로컬=${newLocalLayers.length}`);
+  }, [localStrokes, externalStrokes, penWidth, renderStrokeToPath]);
+
+  // ===== 함수들 =====
+  const clearCanvas = useCallback(() => {
+    console.log('🧽 clearCanvas()');
+    externalLayersRef.current = [];
+    localLayersRef.current = [];
+    setExternalLayers([]);
+    setLocalLayers([]);
+    setGlobalEraserLayers([]);
+    setLocalStrokes([]);
+    setExternalStrokes([]);
+    lastExternalTsRef.current = 0;
+  }, []);
+
+  const renderStrokeToPath = useCallback((stroke: Stroke, scaleX: number = 1, scaleY: number = 1, overrideWidth?: number) => {
+    const corePath = Skia.Path.Make();
+    const dustPath = Skia.Path.Make();
+    
+    const actualWidth = overrideWidth !== undefined ? overrideWidth : (stroke.width || 15);
+    const isThick = actualWidth > 16;
+
+    if (!stroke.points || stroke.points.length === 0) {
+      return { corePath, dustPath };
+    }
+
+    stroke.points.forEach((pt, idx) => {
+      if (idx === 0) return;
+
+      const prevPt = stroke.points[idx - 1];
+      
+      const x = pt.x * scaleX;
+      const y = pt.y * scaleY;
+      const prevX = prevPt.x * scaleX;
+      const prevY = prevPt.y * scaleY;
+      
+      const dx = x - prevX;
+      const dy = y - prevY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      const steps = Math.max(1, Math.floor(dist / CHALK.spacing));
+
+      for (let s = 0; s <= steps; s++) {
+        const t = s / steps;
+        const interpolatedX = prevX + dx * t;
+        const interpolatedY = prevY + dy * t;
+
+        const jitterX = rand(-CHALK.roughness, CHALK.roughness);
+        const jitterY = rand(-CHALK.roughness, CHALK.roughness);
+
+        sprayParticles({
+          x: interpolatedX + jitterX,
+          y: interpolatedY + jitterY,
+          width: actualWidth,
+          corePath,
+          dustPath,
+          isThick,
+        });
+      }
+    });
+
+    return { corePath, dustPath };
+  }, []);
+
+  const renderStrokes = useCallback((localData: Stroke[], externalData: Stroke[]) => {
+    console.log('🖍️ renderStrokes()', `로컬=${localData.length}, 외부=${externalData.length}`);
+
+    // 외부 데이터에서 웹 캔버스 크기 가져오기
+    const firstWebStroke = externalData.find(s => s.canvasWidth && s.canvasHeight);
+    const webCanvasWidth = firstWebStroke?.canvasWidth;
+    const webCanvasHeight = firstWebStroke?.canvasHeight;
+
+    // 1. 외부(iPhone) 데이터 렌더링
+    const newExternalLayers: Layer[] = [];
+    externalData.forEach((stroke) => {
+      let scaleX = 1;
+      let scaleY = 1;
+      
+      if (webCanvasWidth && webCanvasHeight && stroke.canvasWidth) {
+        scaleX = SCREEN_WIDTH / webCanvasWidth;
+        scaleY = SCREEN_HEIGHT / webCanvasHeight;
+      }
+
+      if (stroke.tool === 'eraser') {
+        const eraserPath = Skia.Path.Make();
+        stroke.points.forEach((pt, idx) => {
+          const scaledX = pt.x * scaleX;
+          const scaledY = pt.y * scaleY;
+          
+          if (idx === 0) {
+            eraserPath.moveTo(scaledX, scaledY);
+          } else {
+            eraserPath.lineTo(scaledX, scaledY);
+          }
+        });
+
+        newExternalLayers.push({
+          kind: 'eraser',
+          path: eraserPath,
+        });
+      } else {
+        const finalWidth = penWidth;
+        const { corePath, dustPath } = renderStrokeToPath(stroke, scaleX, scaleY, finalWidth);
+        
+        newExternalLayers.push({
+          kind: 'chalk',
+          corePath,
+          dustPath,
+        });
+      }
+    });
+
+    // 2. 로컬(iPad) 데이터 렌더링
+    const newLocalLayers: Layer[] = [];
+    localData.forEach((stroke) => {
+      if (stroke.tool === 'eraser') {
+        const eraserPath = Skia.Path.Make();
+        stroke.points.forEach((pt, idx) => {
+          if (idx === 0) {
+            eraserPath.moveTo(pt.x, pt.y);
+          } else {
+            eraserPath.lineTo(pt.x, pt.y);
+          }
+        });
+
+        newLocalLayers.push({
+          kind: 'eraser',
+          path: eraserPath,
+        });
+      } else {
+        const { corePath, dustPath } = renderStrokeToPath(stroke);
+        
+        newLocalLayers.push({
+          kind: 'chalk',
+          corePath,
+          dustPath,
+        });
+      }
+    });
+
+    // 별도 state로 저장
+    setExternalLayers(newExternalLayers);
+    setLocalLayers(newLocalLayers);
+
+    console.log('✅ 렌더링 완료:', `외부=${newExternalLayers.length}, 로컬=${newLocalLayers.length}`);
+  }, [penWidth, renderStrokeToPath]);
+
+  const applyPayload = useCallback(
+    (payload: Payload) => {
+      console.log(`✅ applyPayload type=`, payload?.type, `from=`, payload?.from);
+
+      if (!payload || typeof payload !== 'object') return;
+
+      const isFromExternal = payload.from === 'assistant';
+
+      if (payload.type === 'clear') {
+        clearCanvas();
+        return;
+      }
+      
+      if (payload.type === 'strokes' && payload.data) {
+        if (isFromExternal) {
+          const currentTs = payload.ts || 0;
+          
+          // 같은 타임스탬프면 중복이므로 무시
+          if (currentTs === lastExternalTsRef.current) {
+            console.log('⚠️ 중복 데이터 무시 (같은 타임스탬프)');
+            return;
+          }
+          
+          lastExternalTsRef.current = currentTs;
+          console.log('📱 iPhone 데이터 수신 - externalStrokes에 누적');
+          
+          // 외부 데이터를 누적 (덮어쓰기 아님)
+          setExternalStrokes(prev => [...prev, ...payload.data]);
+        }
+        // 렌더링은 useEffect에서 처리
+        return;
+      }
+    },
+    [clearCanvas],
+  );
+
+  const stopPolling = useCallback(() => {
+    if (pollTimerRef.current) {
+      clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
+      console.log('🛑 Polling 중지');
+    }
+  }, []);
+
+  const startPolling = useCallback(
+    (rid: string) => {
+      stopPolling();
+
+      console.log('========================================');
+      console.log('🔄 Polling 시작 (1초 간격)');
+      console.log('🧩 Room ID:', rid);
+      console.log('========================================');
+
+      const db = getDb();
+      const roomBase = `rooms/${rid}`;
+
+      (async () => {
+        try {
+          const ipadPresenceRef = db.ref(`${roomBase}/presence/ipad`);
+          await ipadPresenceRef.onDisconnect().set({
+            online: false,
+            ts: database.ServerValue.TIMESTAMP,
+          });
+          await ipadPresenceRef.set({
+            online: true,
+            ts: database.ServerValue.TIMESTAMP,
+            platform: 'ios',
+          });
+          console.log('✅ iPad presence 설정 완료');
+        } catch (e: any) {
+          console.log('❌ iPad presence 설정 실패:', e?.message);
+        }
+      })();
+
+      pollTimerRef.current = setInterval(async () => {
+        try {
+          const latestRef = db.ref(`${roomBase}/latest`);
+          const latestSnap = await latestRef.once('value');
+
+          if (latestSnap.exists()) {
+            const val = latestSnap.val() as Payload;
+            const newTs = val?.ts || 0;
+
+            if (newTs > lastLatestTsRef.current) {
+              console.log('📥 새로운 latest 데이터 감지!', { oldTs: lastLatestTsRef.current, newTs });
+              lastLatestTsRef.current = newTs;
+              applyPayload(val);
+            }
+          }
+
+          const presRef = db.ref(`${roomBase}/presence/assistant`);
+          const presSnap = await presRef.once('value');
+          const presVal = presSnap.val() || {};
+          const onlineCount = Object.values(presVal).filter((x: any) => x && x.online === true).length;
+          setAssistantOnlineCount(onlineCount);
+
+          const connRef = db.ref('.info/connected');
+          const connSnap = await connRef.once('value');
+          setDbConnected(!!connSnap.val());
+        } catch (e: any) {
+          console.log('⚠️ Polling 오류:', e?.message);
+        }
+      }, 1000);
+    },
+    [applyPayload, getDb, stopPolling],
+  );
+
+  const handleConnect = useCallback(async () => {
+    const rid = makeRoomId(6);
+    setRoomId(rid);
+
+    const url = `https://jarvis-syz.github.io/chalkboard-app/assistant.html?room=${encodeURIComponent(
+      rid,
+    )}&v=${Date.now()}`;
+    setShareUrl(url);
+
+    console.log('🎲 Room ID:', rid);
+    console.log('🔗 URL:', url);
+
+    lastLatestTsRef.current = 0;
+
+    startPolling(rid);
+  }, [startPolling]);
+
+  useEffect(() => {
+    return () => stopPolling();
+  }, [stopPolling]);
+  
+  useEffect(() => {
+    if (!isInitializedRef.current) {
+      isInitializedRef.current = true;
+      handleConnect();
+    }
+  }, [handleConnect]);
+
+  // QR 화면 복귀 (모서리 3번 탭)
+  const handleCornerTap = useCallback(() => {
+    tapCountRef.current += 1;
+    console.log(`👆 모서리 탭 ${tapCountRef.current}/3`);
+
+    if (tapTimerRef.current) {
+      clearTimeout(tapTimerRef.current);
+    }
+
+    if (tapCountRef.current >= 3) {
+      console.log('✅ 3번 탭 감지 - QR 화면으로 이동');
+      setCurrentScreen('qr');
+      tapCountRef.current = 0;
+      return;
+    }
+
+    tapTimerRef.current = setTimeout(() => {
+      console.log('⏱️ 타이머 만료 - 카운트 리셋');
+      tapCountRef.current = 0;
+    }, 1000);
+  }, []);
+
+  // 왼쪽 화면 2번 탭 - 도구 전환
+  const handleLeftSideTap = useCallback(() => {
+    leftTapCountRef.current += 1;
+    console.log(`👆 왼쪽 탭 ${leftTapCountRef.current}/2`);
+
+    if (leftTapTimerRef.current) {
+      clearTimeout(leftTapTimerRef.current);
+    }
+
+    if (leftTapCountRef.current >= 2) {
+      const newTool: ToolType = currentTool === 'chalk' ? 'eraser' : 'chalk';
+      setCurrentTool(newTool);
+      console.log(`✅ 도구 전환: ${newTool === 'eraser' ? '지우개' : '분필'}`);
+      leftTapCountRef.current = 0;
+      return;
+    }
+
+    leftTapTimerRef.current = setTimeout(() => {
+      leftTapCountRef.current = 0;
+    }, 500);
+  }, [currentTool]);
+
+  // 왼쪽 화면 길게 누르기 시작
+  const handleLeftSidePressIn = useCallback(() => {
+    leftLongPressStartRef.current = Date.now();
+    
+    leftLongPressTimerRef.current = setTimeout(() => {
+      console.log('✅ 2초 길게 누르기 - 전체 클리어!');
+      clearCanvas();
+    }, 2000);
+  }, [clearCanvas]);
+
+  // 왼쪽 화면 길게 누르기 취소
+  const handleLeftSidePressOut = useCallback(() => {
+    if (leftLongPressTimerRef.current) {
+      clearTimeout(leftLongPressTimerRef.current);
+      leftLongPressTimerRef.current = null;
     }
     
-body { 
-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-background: #0b0b0b;
-color: #fff;
-display: flex;
-flex-direction: column;
-      height: 100vh;
-      height: 100%;
-      height: 100dvh;
-overflow: hidden;
-      padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    // 2초 미만이면 탭으로 처리
+    const pressDuration = Date.now() - leftLongPressStartRef.current;
+    if (pressDuration < 2000) {
+      handleLeftSideTap();
+    }
+  }, [handleLeftSideTap]);
+
+  useEffect(() => {
+    return () => {
+      if (tapTimerRef.current) clearTimeout(tapTimerRef.current);
+      if (leftTapTimerRef.current) clearTimeout(leftTapTimerRef.current);
+      if (leftLongPressTimerRef.current) clearTimeout(leftLongPressTimerRef.current);
+    };
+  }, []);
+
+  // ===== iPad 그리기 핸들러 =====
+  const handleTouchStart = useCallback((event: any) => {
+    const { locationX, locationY } = event.nativeEvent;
+    const point: Point = { x: locationX, y: locationY };
+    
+    setIsDrawing(true);
+    currentStrokeRef.current = [point];
+    lastRenderTimeRef.current = Date.now();
+    
+    // 그리기 시작 시점의 로컬 레이어 수 저장
+    baseLayerCountRef.current = localLayersRef.current.length;
+    
+    console.log(`✏️ ${currentTool === 'eraser' ? '지우개' : '그리기'} 시작 (로컬 레이어: ${baseLayerCountRef.current})`);
+  }, [currentTool]);
+
+  const handleTouchMove = useCallback((event: any) => {
+    if (!isDrawing) return;
+    
+    const { locationX, locationY } = event.nativeEvent;
+    const point: Point = { x: locationX, y: locationY };
+    
+    currentStrokeRef.current.push(point);
+    
+    const now = Date.now();
+    if (now - lastRenderTimeRef.current < renderThrottleMs) {
+      return;
+    }
+    lastRenderTimeRef.current = now;
+    
+    const tempStroke: Stroke = {
+      points: [...currentStrokeRef.current],
+      width: currentTool === 'eraser' ? eraserWidth : penWidth,
+      tool: currentTool,
+    };
+    
+    // 기준 레이어까지만 유지하고 임시 레이어 추가
+    let newLocalLayers: Layer[] = localLayersRef.current.slice(0, baseLayerCountRef.current);
+    
+    if (currentTool === 'eraser') {
+      const eraserPath = Skia.Path.Make();
+      tempStroke.points.forEach((pt, idx) => {
+        if (idx === 0) {
+          eraserPath.moveTo(pt.x, pt.y);
+        } else {
+          eraserPath.lineTo(pt.x, pt.y);
+        }
+      });
+      
+      newLocalLayers.push({
+        kind: 'eraser',
+        path: eraserPath,
+      });
+    } else {
+      const { corePath, dustPath } = renderStrokeToPath(tempStroke);
+      
+      newLocalLayers.push({
+        kind: 'chalk',
+        corePath,
+        dustPath,
+      });
+    }
+    
+    setLocalLayers(newLocalLayers);
+  }, [isDrawing, currentTool, penWidth, eraserWidth, renderStrokeToPath]);
+
+  const handleTouchEnd = useCallback(() => {
+    if (!isDrawing || currentStrokeRef.current.length < 2) {
+      setIsDrawing(false);
+      currentStrokeRef.current = [];
+      return;
+    }
+    
+    const newStroke: Stroke = {
+      points: [...currentStrokeRef.current],
+      width: currentTool === 'eraser' ? eraserWidth : penWidth,
+      tool: currentTool,
+      order: globalOrderRef.current++, // 전역 순서 부여
+    };
+    
+    // localStrokes에 추가하면 useEffect가 자동으로 렌더링
+    setLocalStrokes(prev => [...prev, newStroke]);
+    
+    setIsDrawing(false);
+    currentStrokeRef.current = [];
+    
+    console.log(`✅ 그리기 완료 (order: ${newStroke.order})`);
+  }, [isDrawing, currentTool, penWidth, eraserWidth]);
+
+  // ===== QR 코드 화면 =====
+  if (currentScreen === 'qr') {
+    return (
+      <SafeAreaView style={styles.qrContainer}>
+        <StatusBar barStyle="light-content" />
+        
+        <View style={styles.qrHeader}>
+          <Text style={styles.qrTitle}>Chalkboard iPad</Text>
+          {roomId && shareUrl && (
+            <TouchableOpacity
+              style={styles.goToChalkboardBtn}
+              onPress={() => setCurrentScreen('chalkboard')}
+            >
+              <Text style={styles.arrowText}>→</Text>
+              <Text style={styles.goToChalkboardText}>Board</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        <View style={styles.qrContent}>
+          {!shareUrl ? (
+            <View style={styles.loadingBox}>
+              <Text style={styles.loadingText}>⏳ Generating QR Code...</Text>
+            </View>
+          ) : (
+            <>
+              <View style={styles.qrCodeBox}>
+                <QRCode value={shareUrl} size={300} backgroundColor="white" />
+              </View>
+
+              <View style={styles.infoBox}>
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>Room ID</Text>
+                  <Text style={styles.infoValue}>{roomId}</Text>
+                </View>
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>Connection</Text>
+                  <Text style={[styles.infoValue, dbConnected && styles.infoValueConnected]}>
+                    {dbConnected ? '✅ Connected' : '⏳ Connecting'}
+                  </Text>
+                </View>
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>Assistant</Text>
+                  <Text style={[styles.infoValue, assistantOnlineCount > 0 && styles.infoValueConnected]}>
+                    {assistantOnlineCount > 0 ? `✅ Connected (${assistantOnlineCount})` : '⏳ Waiting'}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.instructionBox}>
+                <Text style={styles.instructionText}>
+                  💡 칠판 화면 사용법
+                </Text>
+                <Text style={styles.instructionSubText}>
+                  • 모서리 3번 탭: QR 화면으로 돌아가기{'\n'}
+                  • 왼쪽 2번 탭: 분필/지우개 전환{'\n'}
+                  • 왼쪽 2초 길게 누르기: 전체 지우기
+                </Text>
+              </View>
+            </>
+          )}
+        </View>
+
+        {shareUrl && (
+          <View style={styles.settingsContainer}>
+            {/* 펜슬 크기 */}
+            <View style={styles.settingSection}>
+              <Text style={styles.settingLabel}>분필 크기: {Math.round(penWidth)}</Text>
+              <Slider
+                style={styles.slider}
+                minimumValue={5}
+                maximumValue={50}
+                value={penWidth}
+                onValueChange={setPenWidth}
+                minimumTrackTintColor="#1f6feb"
+                maximumTrackTintColor="#333"
+                thumbTintColor="#1f6feb"
+              />
+              <View style={styles.penPreview}>
+                <View
+                  style={[
+                    styles.penPreviewDot,
+                    {
+                      width: penWidth * 2,
+                      height: penWidth * 2,
+                      borderRadius: penWidth,
+                      backgroundColor: 'rgba(230, 235, 228, 0.60)',
+                    },
+                  ]}
+                />
+              </View>
+            </View>
+
+            {/* 지우개 크기 */}
+            <View style={styles.settingSection}>
+              <Text style={styles.settingLabel}>지우개 크기: {Math.round(eraserWidth)}</Text>
+              <Slider
+                style={styles.slider}
+                minimumValue={20}
+                maximumValue={100}
+                value={eraserWidth}
+                onValueChange={setEraserWidth}
+                minimumTrackTintColor="#ff6b6b"
+                maximumTrackTintColor="#333"
+                thumbTintColor="#ff6b6b"
+              />
+              <View style={styles.penPreview}>
+                <View
+                  style={[
+                    styles.penPreviewDot,
+                    {
+                      width: eraserWidth,
+                      height: eraserWidth,
+                      borderRadius: eraserWidth / 2,
+                      backgroundColor: '#333',
+                      borderWidth: 2,
+                      borderColor: '#666',
+                    },
+                  ]}
+                />
+              </View>
+            </View>
+          </View>
+        )}
+      </SafeAreaView>
+    );
+  }
+
+  // ===== 칠판 화면 =====
+  return (
+    <ImageBackground
+      source={require('./assets/chalkboard-background.png')}
+      style={styles.chalkboardContainer}
+      resizeMode="cover"
+    >
+      <StatusBar hidden />
+      
+      {/* 왼쪽 상단 모서리 - QR 복귀 */}
+      <TouchableOpacity
+        style={styles.cornerTapArea}
+        onPress={handleCornerTap}
+        activeOpacity={1}
+      />
+
+      {/* 오른쪽 상단 모서리 - QR 복귀 */}
+      <TouchableOpacity
+        style={[styles.cornerTapArea, styles.cornerTapAreaRight]}
+        onPress={handleCornerTap}
+        activeOpacity={1}
+      />
+
+      {/* 왼쪽 하단 모서리 - QR 복귀 */}
+      <TouchableOpacity
+        style={[styles.cornerTapArea, styles.cornerTapAreaBottomLeft]}
+        onPress={handleCornerTap}
+        activeOpacity={1}
+      />
+
+      {/* 오른쪽 하단 모서리 - QR 복귀 */}
+      <TouchableOpacity
+        style={[styles.cornerTapArea, styles.cornerTapAreaBottomRight]}
+        onPress={handleCornerTap}
+        activeOpacity={1}
+      />
+
+      {/* 왼쪽 중앙 영역 - 도구 전환 (2번 탭) + 전체 클리어 (2초 길게 누르기) */}
+      <TouchableOpacity
+        style={styles.leftSideArea}
+        onPressIn={handleLeftSidePressIn}
+        onPressOut={handleLeftSidePressOut}
+        activeOpacity={1}
+      />
+
+      {/* 지우개 모드 표시 - 왼쪽에 작은 점 */}
+      {currentTool === 'eraser' && (
+        <View style={styles.eraserIndicator}>
+          <View style={styles.eraserDot} />
+        </View>
+      )}
+
+      {/* 그리기 영역 */}
+      <View
+        style={styles.drawingArea}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onTouchCancel={handleTouchEnd}
+      >
+        {/* 하나의 Canvas에서 모든 레이어를 order 순서대로 렌더링 */}
+        <Canvas style={styles.canvas}>
+          {[...externalLayers, ...localLayers]
+            .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+            .map((l, idx) => {
+              if (l.kind === 'eraser' && l.path) {
+                return (
+                  <SkPath
+                    key={`er-${l.order}-${idx}`}
+                    path={l.path}
+                    color="rgba(0,0,0,1)"
+                    style="stroke"
+                    strokeWidth={eraserWidth}
+                    strokeCap="round"
+                    strokeJoin="round"
+                    blendMode="clear"
+                  />
+                );
+              }
+              if (l.kind === 'chalk' && l.dustPath && l.corePath) {
+                return (
+                  <Group key={`ch-${l.order}-${idx}`}>
+                    <SkPath path={l.dustPath} color={CHALK_DUST} style="fill" />
+                    <SkPath path={l.corePath} color={CHALK_CORE} style="fill" />
+                  </Group>
+                );
+              }
+              return null;
+            })}
+        </Canvas>
+      </View>
+    </ImageBackground>
+  );
 }
 
-.header {
-      padding: 8px 12px;
-border-bottom: 1px solid #333;
-text-align: center;
-flex-shrink: 0;
-}
+const styles = StyleSheet.create({
+  // ===== QR 코드 화면 =====
+  qrContainer: {
+    flex: 1,
+    backgroundColor: '#0b0b0b',
+  },
+  qrHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#333',
+  },
+  qrTitle: {
+    color: '#fff',
+    fontSize: 24,
+    fontWeight: '700',
+  },
+  goToChalkboardBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1f6feb',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 12,
+    gap: 8,
+  },
+  arrowText: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  goToChalkboardText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  qrContent: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  loadingBox: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 40,
+  },
+  loadingText: {
+    color: '#999',
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  qrCodeBox: {
+    backgroundColor: '#fff',
+    padding: 30,
+    borderRadius: 20,
+    marginBottom: 30,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+  infoBox: {
+    backgroundColor: '#151515',
+    padding: 20,
+    borderRadius: 16,
+    width: '100%',
+    maxWidth: 500,
+    gap: 12,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  infoLabel: {
+    color: '#999',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  infoValue: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  infoValueConnected: {
+    color: '#00ff88',
+  },
+  
+  instructionBox: {
+    backgroundColor: '#1a1a2e',
+    padding: 16,
+    borderRadius: 12,
+    marginTop: 24,
+    width: '100%',
+    maxWidth: 500,
+    borderWidth: 1,
+    borderColor: '#2a2a4e',
+  },
+  instructionText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  instructionSubText: {
+    color: '#9ca3af',
+    fontSize: 14,
+    lineHeight: 22,
+  },
+  
+  settingsContainer: {
+    padding: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#333',
+    backgroundColor: '#151515',
+    gap: 24,
+  },
+  settingSection: {
+    gap: 8,
+  },
+  settingLabel: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  slider: {
+    width: '100%',
+    height: 40,
+  },
+  penPreview: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 60,
+    marginTop: 8,
+  },
+  penPreviewDot: {
+    // 동적으로 설정됨
+  },
 
-.title {
-      font-size: 16px;
-font-weight: 700;
-      margin-bottom: 6px;
-}
-
-.room-info {
-display: flex;
-      gap: 6px;
-align-items: center;
-justify-content: center;
-flex-wrap: wrap;
-}
-
-.room-display {
-      font-size: 12px;
-      padding: 4px 10px;
-      border-radius: 6px;
-background: #111;
-border: 1px solid #333;
-color: #999;
-}
-
-.room-id {
-color: #fff;
-font-weight: 700;
-      font-size: 14px;
-letter-spacing: 1px;
-}
-
-button {
-font-size: 14px;
-padding: 10px 20px;
-border-radius: 8px;
-border: none;
-background: #1f6feb;
-color: #fff;
-font-weight: 700;
-cursor: pointer;
-transition: background 0.2s;
-touch-action: manipulation;
-}
-
-button:active {
-background: #1566d6;
-}
-
-button.secondary {
-background: #333;
-}
-
-button.secondary:active {
-background: #444;
-}
-
-.canvas-container {
-flex: 1;
-display: flex;
-align-items: center;
-justify-content: center;
-      padding: 6px 8px;
-overflow: hidden;
-min-height: 0;
-}
-
-#pad {
-width: 100%;
-max-width: 100%;
-      max-height: 100%;
-aspect-ratio: 3/4;
-border: 2px solid #333;
-      border-radius: 10px;
-touch-action: none;
-background: #0f0f0f;
-}
-
-.controls {
-      padding: 8px 12px;
-      padding-bottom: calc(8px + env(safe-area-inset-bottom));
-display: flex;
-gap: 8px;
-justify-content: center;
-border-top: 1px solid #333;
-flex-shrink: 0;
-}
-
-.pill {
-display: inline-block;
-padding: 5px 10px;
-border-radius: 999px;
-background: #222;
-border: 1px solid #333;
-font-size: 11px;
-}
-
-.ok {
-background: #123b1f;
-border-color: #1f7a3a;
-color: #00ff88;
-}
-
-.bad {
-background: #3b1212;
-border-color: #7a1f1f;
-color: #ff6b6b;
-}
-
-.landscape-warning {
-display: none;
-position: fixed;
-top: 0;
-left: 0;
-width: 100%;
-height: 100%;
-background: rgba(0, 0, 0, 0.95);
-z-index: 9999;
-flex-direction: column;
-align-items: center;
-justify-content: center;
-text-align: center;
-padding: 20px;
-}
-
-.landscape-warning.show {
-display: flex;
-}
-
-.rotate-icon {
-font-size: 60px;
-margin-bottom: 20px;
-}
-
-.landscape-warning-text {
-font-size: 18px;
-font-weight: 600;
-}
-
-@media screen and (orientation: landscape) and (max-height: 500px) {
-.landscape-warning {
-display: flex;
-}
-.header, .canvas-container, .controls {
-display: none;
-}
-}
-</style>
-</head>
-<body>
-<div class="landscape-warning">
-<div class="rotate-icon">📱</div>
-<div class="landscape-warning-text">Please rotate to portrait mode</div>
-</div>
-
-<div class="header">
-<div class="title">Chalkboard Assistant</div>
-<div class="room-info">
-<span class="room-display">Room: <span class="room-id" id="roomDisplay">-</span></span>
-<span id="conn" class="pill bad">Waiting</span>
-</div>
-</div>
-
-<div class="canvas-container">
-<canvas id="pad"></canvas>
-</div>
-
-<div class="controls">
-<button id="btnSend">Send</button>
-<button id="btnClearAll" class="secondary">Clear All</button>
-<button id="btnClearLocal" class="secondary">Clear iPhone</button>
-</div>
-
-<script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
-import {
-getDatabase, ref, set, push, onValue, serverTimestamp, onDisconnect
-} from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
-
-const firebaseConfig = {
-apiKey: "AIzaSyB8OTEF1deQf0tLMElQAH3iyMFcRnL_2lI",
-authDomain: "syz-test.firebaseapp.com",
-databaseURL: "https://syz-test-default-rtdb.asia-southeast1.firebasedatabase.app",
-projectId: "syz-test",
-appId: "1:85684795276:web:eb64abb9dd16ee30e788a9",
-};
-
-const app = initializeApp(firebaseConfig);
-const db = getDatabase(app);
-
-const $ = (id) => document.getElementById(id);
-const roomDisplay = $("roomDisplay");
-const connPill = $("conn");
-
-const qs = new URLSearchParams(location.search);
-const roomId = String(qs.get("room") || "").trim().toUpperCase();
-
-if (!roomId) {
-alert("No Room ID provided in URL");
-roomDisplay.textContent = "ERROR";
-} else {
-roomDisplay.textContent = roomId;
-}
-
-const clientId = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + "-" + Math.random().toString(16).slice(2));
-let isDbConnected = false;
-let seq = 0;
-
-onValue(ref(db, ".info/connected"), (snap) => {
-isDbConnected = !!snap.val();
-connPill.textContent = isDbConnected ? "Connected" : "Waiting";
-connPill.className = "pill " + (isDbConnected ? "ok" : "bad");
+  // ===== 칠판 화면 =====
+  chalkboardContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT,
+  },
+  cornerTapArea: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: 80,
+    height: 80,
+    zIndex: 100,
+    backgroundColor: 'transparent',
+  },
+  cornerTapAreaRight: {
+    left: undefined,
+    right: 0,
+  },
+  cornerTapAreaBottomLeft: {
+    top: undefined,
+    bottom: 0,
+  },
+  cornerTapAreaBottomRight: {
+    top: undefined,
+    left: undefined,
+    bottom: 0,
+    right: 0,
+  },
+  
+  // 왼쪽 중앙 영역 (도구 전환 + 전체 클리어)
+  leftSideArea: {
+    position: 'absolute',
+    left: 0,
+    top: '30%',
+    width: 100,
+    height: '40%',
+    zIndex: 99,
+    backgroundColor: 'transparent',
+  },
+  
+  // 지우개 모드 표시
+  eraserIndicator: {
+    position: 'absolute',
+    left: 20,
+    top: '50%',
+    zIndex: 101,
+    transform: [{ translateY: -4 }],
+  },
+  eraserDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#000',
+  },
+  
+  drawingArea: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT,
+  },
+  canvas: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT,
+  },
 });
-
-async function connect() {
-if (!roomId) return;
-
-const pRef = ref(db, `rooms/${roomId}/presence/assistant/${clientId}`);
-try {
-await onDisconnect(pRef).set({ online: false, ts: serverTimestamp(), clientId });
-await set(pRef, { online: true, ts: serverTimestamp(), clientId, ua: navigator.userAgent });
-} catch (e) {
-alert("Connection failed: " + e.message);
-}
-}
-
-if (roomId) connect();
-
-const canvas = $("pad");
-const ctx = canvas.getContext("2d");
-
-function resizeCanvas() {
-const dpr = window.devicePixelRatio || 1;
-const rect = canvas.getBoundingClientRect();
-
-canvas.width = Math.floor(rect.width * dpr);
-canvas.height = Math.floor(rect.height * dpr);
-
-ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-ctx.lineWidth = 3;
-ctx.lineJoin = "round";
-ctx.lineCap = "round";
-ctx.strokeStyle = "#ffffff";
-
-clearLocal();
-}
-
-function clearLocal() {
-const rect = canvas.getBoundingClientRect();
-ctx.clearRect(0, 0, rect.width, rect.height);
-ctx.fillStyle = "#0f0f0f";
-ctx.fillRect(0, 0, rect.width, rect.height);
-}
-
-window.addEventListener("resize", resizeCanvas);
-resizeCanvas();
-
-let drawing = false;
-let currentStroke = [];
-let strokes = [];
-
-function pointFromEvent(e) {
-const rect = canvas.getBoundingClientRect();
-const x = (e.clientX ?? e.touches?.[0]?.clientX) - rect.left;
-const y = (e.clientY ?? e.touches?.[0]?.clientY) - rect.top;
-return { x, y };
-}
-
-function beginStroke(p) {
-drawing = true;
-currentStroke = [p];
-ctx.beginPath();
-ctx.moveTo(p.x, p.y);
-}
-
-function moveStroke(p) {
-if (!drawing) return;
-currentStroke.push(p);
-ctx.lineTo(p.x, p.y);
-ctx.stroke();
-}
-
-function endStroke(p) {
-if (!drawing) return;
-drawing = false;
-if (p) currentStroke.push(p);
-if (currentStroke.length >= 2) strokes.push(currentStroke);
-currentStroke = [];
-}
-
-canvas.addEventListener("pointerdown", (e) => {
-canvas.setPointerCapture(e.pointerId);
-beginStroke(pointFromEvent(e));
-});
-canvas.addEventListener("pointermove", (e) => moveStroke(pointFromEvent(e)));
-canvas.addEventListener("pointerup", (e) => endStroke(pointFromEvent(e)));
-canvas.addEventListener("pointercancel", () => endStroke());
-
-async function writeBoth(payload) {
-if (!roomId) {
-alert("No Room ID");
-return;
-}
-
-const latestPath = `rooms/${roomId}/latest`;
-const eventsPath = `rooms/${roomId}/events`;
-
-await set(ref(db, latestPath), payload);
-await push(ref(db, eventsPath), payload);
-}
-
-// Send: iPad로 전송 후 iPhone 화면 클리어
-$("btnSend").addEventListener("click", async () => {
-if (!isDbConnected) {
-alert("Not connected to database");
-return;
-}
-
-if (strokes.length === 0) {
-alert("No drawing to send");
-return;
-}
-
-const rect = canvas.getBoundingClientRect();
-
-const formattedStrokes = strokes.map(pointArray => ({
-points: pointArray.map(p => ({ 
-x: p.x,
-y: p.y
-})),
-width: 15,
-tool: "chalk",
-canvasWidth: rect.width,
-canvasHeight: rect.height
-}));
-
-const payload = {
-type: "strokes",
-data: formattedStrokes,
-from: "assistant",
-clientId,
-seq: ++seq,
-ts: serverTimestamp(),
-};
-
-try {
-await writeBoth(payload);
-strokes = [];
-clearLocal();
-} catch (e) {
-alert("Send failed: " + e.message);
-}
-});
-
-// Clear All: iPad 포함 전체 클리어
-$("btnClearAll").addEventListener("click", async () => {
-const payload = {
-type: "clear",
-from: "assistant",
-clientId,
-seq: ++seq,
-ts: serverTimestamp(),
-};
-
-try {
-await writeBoth(payload);
-strokes = [];
-clearLocal();
-} catch (e) {
-alert("Clear failed: " + e.message);
-}
-});
-
-// Clear iPhone: iPhone 화면만 클리어
-$("btnClearLocal").addEventListener("click", () => {
-strokes = [];
-clearLocal();
-});
-</script>
-</body>
-</html>
