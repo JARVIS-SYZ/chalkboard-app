@@ -181,6 +181,33 @@ display: flex;
 display: none;
 }
 }
+
+/* 토스트 메시지 */
+.toast {
+position: fixed;
+top: 50%;
+left: 50%;
+transform: translate(-50%, -50%);
+background: rgba(31, 111, 235, 0.95);
+color: #fff;
+padding: 16px 32px;
+border-radius: 12px;
+font-size: 16px;
+font-weight: 600;
+z-index: 10000;
+opacity: 0;
+transition: opacity 0.3s;
+pointer-events: none;
+box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+.toast.show {
+opacity: 1;
+}
+
+.toast.error {
+background: rgba(220, 38, 38, 0.95);
+}
 </style>
 </head>
 <body>
@@ -207,6 +234,8 @@ display: none;
 <button id="btnClearLocal" class="secondary">Clear iPhone</button>
 </div>
 
+<div id="toast" class="toast"></div>
+
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
 import {
@@ -227,6 +256,16 @@ const db = getDatabase(app);
 const $ = (id) => document.getElementById(id);
 const roomDisplay = $("roomDisplay");
 const connPill = $("conn");
+const toastEl = $("toast");
+
+// 토스트 메시지 표시
+function showToast(message, isError = false) {
+toastEl.textContent = message;
+toastEl.className = isError ? "toast error show" : "toast show";
+setTimeout(() => {
+toastEl.className = "toast";
+}, 1500);
+}
 
 const qs = new URLSearchParams(location.search);
 const roomId = String(qs.get("room") || "").trim().toUpperCase();
@@ -349,12 +388,12 @@ await push(ref(db, eventsPath), payload);
 // Send: iPad로 전송 후 iPhone 화면 클리어
 $("btnSend").addEventListener("click", async () => {
 if (!isDbConnected) {
-alert("Not connected to database");
+showToast("Not connected", true);
 return;
 }
 
 if (strokes.length === 0) {
-alert("No drawing to send");
+showToast("No drawing", true);
 return;
 }
 
@@ -384,8 +423,9 @@ try {
 await writeBoth(payload);
 strokes = [];
 clearLocal();
+showToast("✅ Send Success");
 } catch (e) {
-alert("Send failed: " + e.message);
+showToast("Send failed", true);
 }
 });
 
@@ -403,8 +443,9 @@ try {
 await writeBoth(payload);
 strokes = [];
 clearLocal();
+showToast("✅ Clear Success");
 } catch (e) {
-alert("Clear failed: " + e.message);
+showToast("Clear failed", true);
 }
 });
 
@@ -412,6 +453,7 @@ alert("Clear failed: " + e.message);
 $("btnClearLocal").addEventListener("click", () => {
 strokes = [];
 clearLocal();
+showToast("✅ iPhone Clear");
 });
 </script>
 </body>
