@@ -10,228 +10,242 @@
 <title>Chalkboard Assistant</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
-    
-    html {
-      height: 100%;
-      height: 100dvh;
-    }
-    
+
+/* ✅ 페이지 자체 드래그/스크롤/바운스/선택 완전 차단 */
+html, body {
+  height: 100%;
+  overflow: hidden;               /* 스크롤 자체 차단 */
+  overscroll-behavior: none;      /* 일부 브라우저 바운스/리프레시 차단 */
+  touch-action: none;             /* 터치 스크롤/제스처 기본 동작 차단 */
+  -webkit-user-select: none;      /* 텍스트 선택 방지 */
+  user-select: none;
+  -webkit-touch-callout: none;    /* 길게눌러 메뉴 방지 */
+}
+
+html {
+  height: 100%;
+  height: 100dvh;
+}
+
 body { 
-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-background: #0b0b0b;
-color: #fff;
-display: flex;
-flex-direction: column;
-      height: 100vh;
-      height: 100%;
-      height: 100dvh;
-overflow: hidden;
-      padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: #0b0b0b;
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100%;
+  height: 100dvh;
+  overflow: hidden;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 
 .header {
-      padding: 8px 12px;
-border-bottom: 1px solid #333;
-text-align: center;
-flex-shrink: 0;
+  padding: 8px 12px;
+  border-bottom: 1px solid #333;
+  text-align: center;
+  flex-shrink: 0;
 }
 
 .title {
-      font-size: 16px;
-font-weight: 700;
-      margin-bottom: 6px;
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 6px;
 }
 
 .room-info {
-display: flex;
-      gap: 6px;
-align-items: center;
-justify-content: center;
-flex-wrap: wrap;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
 }
 
 .room-display {
-      font-size: 12px;
-      padding: 4px 10px;
-      border-radius: 6px;
-background: #111;
-border: 1px solid #333;
-color: #999;
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: #111;
+  border: 1px solid #333;
+  color: #999;
 }
 
 .room-id {
-color: #fff;
-font-weight: 700;
-      font-size: 14px;
-letter-spacing: 1px;
+  color: #fff;
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 1px;
 }
 
 button {
-font-size: 14px;
-padding: 10px 20px;
-border-radius: 8px;
-border: none;
-background: #1f6feb;
-color: #fff;
-font-weight: 700;
-cursor: pointer;
-transition: background 0.2s;
-touch-action: manipulation;
+  font-size: 14px;
+  padding: 10px 20px;
+  border-radius: 8px;
+  border: none;
+  background: #1f6feb;
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.2s;
+  touch-action: manipulation;
 }
 
 button:active {
-background: #1566d6;
+  background: #1566d6;
 }
 
 button.secondary {
-background: #333;
+  background: #333;
 }
 
 button.secondary:active {
-background: #444;
+  background: #444;
 }
 
 .canvas-container {
-flex: 1;
-display: flex;
-align-items: center;
-justify-content: center;
-      padding: 6px 8px;
-overflow: hidden;
-min-height: 0;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 8px;
+  overflow: hidden;
+  min-height: 0;
+
+  /* ✅ 캔버스 영역에서도 스크롤/제스처 차단 */
+  touch-action: none;
 }
 
 #pad {
-width: 100%;
-max-width: 100%;
-      max-height: 100%;
-aspect-ratio: 3/4;
-border: 2px solid #333;
-      border-radius: 10px;
-touch-action: none;
-background: #0f0f0f;
+  width: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  aspect-ratio: 3/4;
+  border: 2px solid #333;
+  border-radius: 10px;
+  touch-action: none;
+  background: #0f0f0f;
 }
 
 .controls {
-      padding: 8px 12px;
-      padding-bottom: calc(8px + env(safe-area-inset-bottom));
-display: flex;
-gap: 8px;
-justify-content: center;
-border-top: 1px solid #333;
-flex-shrink: 0;
+  padding: 8px 12px;
+  padding-bottom: calc(8px + env(safe-area-inset-bottom));
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  border-top: 1px solid #333;
+  flex-shrink: 0;
 }
 
 .pill {
-display: inline-block;
-padding: 5px 10px;
-border-radius: 999px;
-background: #222;
-border: 1px solid #333;
-font-size: 11px;
+  display: inline-block;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: #222;
+  border: 1px solid #333;
+  font-size: 11px;
 }
 
 .ok {
-background: #123b1f;
-border-color: #1f7a3a;
-color: #00ff88;
+  background: #123b1f;
+  border-color: #1f7a3a;
+  color: #00ff88;
 }
 
 .bad {
-background: #3b1212;
-border-color: #7a1f1f;
-color: #ff6b6b;
+  background: #3b1212;
+  border-color: #7a1f1f;
+  color: #ff6b6b;
 }
 
 .landscape-warning {
-display: none;
-position: fixed;
-top: 0;
-left: 0;
-width: 100%;
-height: 100%;
-background: rgba(0, 0, 0, 0.95);
-z-index: 9999;
-flex-direction: column;
-align-items: center;
-justify-content: center;
-text-align: center;
-padding: 20px;
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.95);
+  z-index: 9999;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 20px;
 }
 
 .landscape-warning.show {
-display: flex;
+  display: flex;
 }
 
 .rotate-icon {
-font-size: 60px;
-margin-bottom: 20px;
+  font-size: 60px;
+  margin-bottom: 20px;
 }
 
 .landscape-warning-text {
-font-size: 18px;
-font-weight: 600;
+  font-size: 18px;
+  font-weight: 600;
 }
 
 @media screen and (orientation: landscape) and (max-height: 500px) {
-.landscape-warning {
-display: flex;
-}
-.header, .canvas-container, .controls {
-display: none;
-}
+  .landscape-warning {
+    display: flex;
+  }
+  .header, .canvas-container, .controls {
+    display: none;
+  }
 }
 
 /* 토스트 메시지 */
 .toast {
-position: fixed;
-top: 50%;
-left: 50%;
-transform: translate(-50%, -50%);
-background: rgba(31, 111, 235, 0.95);
-color: #fff;
-padding: 16px 32px;
-border-radius: 12px;
-font-size: 16px;
-font-weight: 600;
-z-index: 10000;
-opacity: 0;
-transition: opacity 0.3s;
-pointer-events: none;
-box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(31, 111, 235, 0.95);
+  color: #fff;
+  padding: 16px 32px;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 600;
+  z-index: 10000;
+  opacity: 0;
+  transition: opacity 0.3s;
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
 }
 
 .toast.show {
-opacity: 1;
+  opacity: 1;
 }
 
 .toast.error {
-background: rgba(220, 38, 38, 0.95);
+  background: rgba(220, 38, 38, 0.95);
 }
 </style>
 </head>
 <body>
 <div class="landscape-warning">
-<div class="rotate-icon">📱</div>
-<div class="landscape-warning-text">Please rotate to portrait mode</div>
+  <div class="rotate-icon">📱</div>
+  <div class="landscape-warning-text">Please rotate to portrait mode</div>
 </div>
 
 <div class="header">
-<div class="title">Chalkboard Assistant</div>
-<div class="room-info">
-<span class="room-display">Room: <span class="room-id" id="roomDisplay">-</span></span>
-<span id="conn" class="pill bad">Waiting</span>
-</div>
+  <div class="title">Chalkboard Assistant</div>
+  <div class="room-info">
+    <span class="room-display">Room: <span class="room-id" id="roomDisplay">-</span></span>
+    <span id="conn" class="pill bad">Waiting</span>
+  </div>
 </div>
 
 <div class="canvas-container">
-<canvas id="pad"></canvas>
+  <canvas id="pad"></canvas>
 </div>
 
 <div class="controls">
-<button id="btnSend">Send</button>
-<button id="btnClearAll" class="secondary">Clear All</button>
-<button id="btnClearLocal" class="secondary">Clear iPhone</button>
+  <button id="btnSend">Send</button>
+  <button id="btnClearAll" class="secondary">Clear All</button>
+  <button id="btnClearLocal" class="secondary">Clear iPhone</button>
 </div>
 
 <div id="toast" class="toast"></div>
@@ -239,15 +253,15 @@ background: rgba(220, 38, 38, 0.95);
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
 import {
-getDatabase, ref, set, push, onValue, serverTimestamp, onDisconnect
+  getDatabase, ref, set, push, onValue, serverTimestamp, onDisconnect
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 
 const firebaseConfig = {
-apiKey: "AIzaSyB8OTEF1deQf0tLMElQAH3iyMFcRnL_2lI",
-authDomain: "syz-test.firebaseapp.com",
-databaseURL: "https://syz-test-default-rtdb.asia-southeast1.firebasedatabase.app",
-projectId: "syz-test",
-appId: "1:85684795276:web:eb64abb9dd16ee30e788a9",
+  apiKey: "AIzaSyB8OTEF1deQf0tLMElQAH3iyMFcRnL_2lI",
+  authDomain: "syz-test.firebaseapp.com",
+  databaseURL: "https://syz-test-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "syz-test",
+  appId: "1:85684795276:web:eb64abb9dd16ee30e788a9",
 };
 
 const app = initializeApp(firebaseConfig);
@@ -258,23 +272,45 @@ const roomDisplay = $("roomDisplay");
 const connPill = $("conn");
 const toastEl = $("toast");
 
+// ✅ iOS Safari 포함: 페이지 드래그/스크롤/줌 제스처 완전 차단
+document.addEventListener(
+  "touchmove",
+  (e) => e.preventDefault(),
+  { passive: false }
+);
+document.addEventListener(
+  "gesturestart",
+  (e) => e.preventDefault(),
+  { passive: false }
+);
+document.addEventListener(
+  "gesturechange",
+  (e) => e.preventDefault(),
+  { passive: false }
+);
+document.addEventListener(
+  "gestureend",
+  (e) => e.preventDefault(),
+  { passive: false }
+);
+
 // 토스트 메시지 표시
 function showToast(message, isError = false) {
-toastEl.textContent = message;
-toastEl.className = isError ? "toast error show" : "toast show";
-setTimeout(() => {
-toastEl.className = "toast";
-}, 1500);
+  toastEl.textContent = message;
+  toastEl.className = isError ? "toast error show" : "toast show";
+  setTimeout(() => {
+    toastEl.className = "toast";
+  }, 1500);
 }
 
 const qs = new URLSearchParams(location.search);
 const roomId = String(qs.get("room") || "").trim().toUpperCase();
 
 if (!roomId) {
-alert("No Room ID provided in URL");
-roomDisplay.textContent = "ERROR";
+  alert("No Room ID provided in URL");
+  roomDisplay.textContent = "ERROR";
 } else {
-roomDisplay.textContent = roomId;
+  roomDisplay.textContent = roomId;
 }
 
 const clientId = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + "-" + Math.random().toString(16).slice(2));
@@ -282,21 +318,21 @@ let isDbConnected = false;
 let seq = 0;
 
 onValue(ref(db, ".info/connected"), (snap) => {
-isDbConnected = !!snap.val();
-connPill.textContent = isDbConnected ? "Connected" : "Waiting";
-connPill.className = "pill " + (isDbConnected ? "ok" : "bad");
+  isDbConnected = !!snap.val();
+  connPill.textContent = isDbConnected ? "Connected" : "Waiting";
+  connPill.className = "pill " + (isDbConnected ? "ok" : "bad");
 });
 
 async function connect() {
-if (!roomId) return;
+  if (!roomId) return;
 
-const pRef = ref(db, `rooms/${roomId}/presence/assistant/${clientId}`);
-try {
-await onDisconnect(pRef).set({ online: false, ts: serverTimestamp(), clientId });
-await set(pRef, { online: true, ts: serverTimestamp(), clientId, ua: navigator.userAgent });
-} catch (e) {
-alert("Connection failed: " + e.message);
-}
+  const pRef = ref(db, `rooms/${roomId}/presence/assistant/${clientId}`);
+  try {
+    await onDisconnect(pRef).set({ online: false, ts: serverTimestamp(), clientId });
+    await set(pRef, { online: true, ts: serverTimestamp(), clientId, ua: navigator.userAgent });
+  } catch (e) {
+    alert("Connection failed: " + e.message);
+  }
 }
 
 if (roomId) connect();
@@ -304,28 +340,33 @@ if (roomId) connect();
 const canvas = $("pad");
 const ctx = canvas.getContext("2d");
 
+// ✅ 캔버스에서 발생하는 터치 기본동작도 차단 (스크롤/더블탭 확대 등)
+["touchstart", "touchmove", "touchend"].forEach((evt) => {
+  canvas.addEventListener(evt, (e) => e.preventDefault(), { passive: false });
+});
+
 function resizeCanvas() {
-const dpr = window.devicePixelRatio || 1;
-const rect = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
 
-canvas.width = Math.floor(rect.width * dpr);
-canvas.height = Math.floor(rect.height * dpr);
+  canvas.width = Math.floor(rect.width * dpr);
+  canvas.height = Math.floor(rect.height * dpr);
 
-ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-ctx.lineWidth = 3;
-ctx.lineJoin = "round";
-ctx.lineCap = "round";
-ctx.strokeStyle = "#ffffff";
+  ctx.lineWidth = 3;
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  ctx.strokeStyle = "#ffffff";
 
-clearLocal();
+  clearLocal();
 }
 
 function clearLocal() {
-const rect = canvas.getBoundingClientRect();
-ctx.clearRect(0, 0, rect.width, rect.height);
-ctx.fillStyle = "#0f0f0f";
-ctx.fillRect(0, 0, rect.width, rect.height);
+  const rect = canvas.getBoundingClientRect();
+  ctx.clearRect(0, 0, rect.width, rect.height);
+  ctx.fillStyle = "#0f0f0f";
+  ctx.fillRect(0, 0, rect.width, rect.height);
 }
 
 window.addEventListener("resize", resizeCanvas);
@@ -336,124 +377,124 @@ let currentStroke = [];
 let strokes = [];
 
 function pointFromEvent(e) {
-const rect = canvas.getBoundingClientRect();
-const x = (e.clientX ?? e.touches?.[0]?.clientX) - rect.left;
-const y = (e.clientY ?? e.touches?.[0]?.clientY) - rect.top;
-return { x, y };
+  const rect = canvas.getBoundingClientRect();
+  const x = (e.clientX ?? e.touches?.[0]?.clientX) - rect.left;
+  const y = (e.clientY ?? e.touches?.[0]?.clientY) - rect.top;
+  return { x, y };
 }
 
 function beginStroke(p) {
-drawing = true;
-currentStroke = [p];
-ctx.beginPath();
-ctx.moveTo(p.x, p.y);
+  drawing = true;
+  currentStroke = [p];
+  ctx.beginPath();
+  ctx.moveTo(p.x, p.y);
 }
 
 function moveStroke(p) {
-if (!drawing) return;
-currentStroke.push(p);
-ctx.lineTo(p.x, p.y);
-ctx.stroke();
+  if (!drawing) return;
+  currentStroke.push(p);
+  ctx.lineTo(p.x, p.y);
+  ctx.stroke();
 }
 
 function endStroke(p) {
-if (!drawing) return;
-drawing = false;
-if (p) currentStroke.push(p);
-if (currentStroke.length >= 2) strokes.push(currentStroke);
-currentStroke = [];
+  if (!drawing) return;
+  drawing = false;
+  if (p) currentStroke.push(p);
+  if (currentStroke.length >= 2) strokes.push(currentStroke);
+  currentStroke = [];
 }
 
 canvas.addEventListener("pointerdown", (e) => {
-canvas.setPointerCapture(e.pointerId);
-beginStroke(pointFromEvent(e));
+  canvas.setPointerCapture(e.pointerId);
+  beginStroke(pointFromEvent(e));
 });
 canvas.addEventListener("pointermove", (e) => moveStroke(pointFromEvent(e)));
 canvas.addEventListener("pointerup", (e) => endStroke(pointFromEvent(e)));
 canvas.addEventListener("pointercancel", () => endStroke());
 
 async function writeBoth(payload) {
-if (!roomId) {
-alert("No Room ID");
-return;
-}
+  if (!roomId) {
+    alert("No Room ID");
+    return;
+  }
 
-const latestPath = `rooms/${roomId}/latest`;
-const eventsPath = `rooms/${roomId}/events`;
+  const latestPath = `rooms/${roomId}/latest`;
+  const eventsPath = `rooms/${roomId}/events`;
 
-await set(ref(db, latestPath), payload);
-await push(ref(db, eventsPath), payload);
+  await set(ref(db, latestPath), payload);
+  await push(ref(db, eventsPath), payload);
 }
 
 // Send: iPad로 전송 후 iPhone 화면 클리어
 $("btnSend").addEventListener("click", async () => {
-if (!isDbConnected) {
-showToast("Not connected", true);
-return;
-}
+  if (!isDbConnected) {
+    showToast("Not connected", true);
+    return;
+  }
 
-if (strokes.length === 0) {
-showToast("No drawing", true);
-return;
-}
+  if (strokes.length === 0) {
+    showToast("No drawing", true);
+    return;
+  }
 
-const rect = canvas.getBoundingClientRect();
+  const rect = canvas.getBoundingClientRect();
 
-const formattedStrokes = strokes.map(pointArray => ({
-points: pointArray.map(p => ({ 
-x: p.x,
-y: p.y
-})),
-width: 15,
-tool: "chalk",
-canvasWidth: rect.width,
-canvasHeight: rect.height
-}));
+  const formattedStrokes = strokes.map(pointArray => ({
+    points: pointArray.map(p => ({ 
+      x: p.x,
+      y: p.y
+    })),
+    width: 15,
+    tool: "chalk",
+    canvasWidth: rect.width,
+    canvasHeight: rect.height
+  }));
 
-const payload = {
-type: "strokes",
-data: formattedStrokes,
-from: "assistant",
-clientId,
-seq: ++seq,
-ts: serverTimestamp(),
-};
+  const payload = {
+    type: "strokes",
+    data: formattedStrokes,
+    from: "assistant",
+    clientId,
+    seq: ++seq,
+    ts: serverTimestamp(),
+  };
 
-try {
-await writeBoth(payload);
-strokes = [];
-clearLocal();
-showToast("✅ Send Success");
-} catch (e) {
-showToast("Send failed", true);
-}
+  try {
+    await writeBoth(payload);
+    strokes = [];
+    clearLocal();
+    showToast("✅ Send Success");
+  } catch (e) {
+    showToast("Send failed", true);
+  }
 });
 
 // Clear All: iPad 포함 전체 클리어
 $("btnClearAll").addEventListener("click", async () => {
-const payload = {
-type: "clear",
-from: "assistant",
-clientId,
-seq: ++seq,
-ts: serverTimestamp(),
-};
+  const payload = {
+    type: "clear",
+    from: "assistant",
+    clientId,
+    seq: ++seq,
+    ts: serverTimestamp(),
+  };
 
-try {
-await writeBoth(payload);
-strokes = [];
-clearLocal();
-showToast("✅ Clear Success");
-} catch (e) {
-showToast("Clear failed", true);
-}
+  try {
+    await writeBoth(payload);
+    strokes = [];
+    clearLocal();
+    showToast("✅ Clear Success");
+  } catch (e) {
+    showToast("Clear failed", true);
+  }
 });
 
 // Clear iPhone: iPhone 화면만 클리어
 $("btnClearLocal").addEventListener("click", () => {
-strokes = [];
-clearLocal();
-showToast("✅ iPhone Clear");
+  strokes = [];
+  clearLocal();
+  showToast("✅ iPhone Clear");
 });
 </script>
 </body>
